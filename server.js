@@ -432,7 +432,7 @@ app.get('/api/devices/resolve/:code', (req, res) => {
     const singleDevice = db.prepare(`
       SELECT dev.*, d.name as department_name, d.description as department_desc
       FROM devices dev
-      JOIN departments d ON dev.department_id = d.id
+      LEFT JOIN departments d ON dev.department_id = d.id
       WHERE dev.original_sn = ? COLLATE NOCASE OR dev.custom_sn = ? COLLATE NOCASE
     `).get(rawCode, rawCode);
 
@@ -457,7 +457,7 @@ app.get('/api/devices/resolve/:code', (req, res) => {
       const findStmt = db.prepare(`
         SELECT dev.*, d.name as department_name, d.description as department_desc
         FROM devices dev
-        JOIN departments d ON dev.department_id = d.id
+        LEFT JOIN departments d ON dev.department_id = d.id
         WHERE dev.original_sn = ? COLLATE NOCASE OR dev.custom_sn = ? COLLATE NOCASE
       `);
 
@@ -728,18 +728,14 @@ app.post('/api/scan', (req, res) => {
     }
 
     if (!department_id) {
-      return res.status(400).json({
-        success: false,
-        errorType: 'MISSING_DEPARTMENT',
-        message: 'กรุณาระบุตู้/แผนกที่กำลังทำรายการ'
-      });
+      department_id = 'OBD A';
     }
 
     // 1. Resolve PDA by either original_sn or custom_sn
     const device = db.prepare(`
       SELECT dev.*, d.name as department_name 
       FROM devices dev
-      JOIN departments d ON dev.department_id = d.id
+      LEFT JOIN departments d ON dev.department_id = d.id
       WHERE dev.original_sn = ? COLLATE NOCASE OR dev.custom_sn = ? COLLATE NOCASE
     `).get(code, code);
 
@@ -751,7 +747,7 @@ app.post('/api/scan', (req, res) => {
       });
     }
 
-    // Allow transaction seamlessly across all kiosks
+    const txnDept = department_id || device.department_id || 'OBD A';
 
     // 3. Determine actual operation if AUTO
     let targetAction = action;
@@ -775,7 +771,7 @@ app.post('/api/scan', (req, res) => {
         db.prepare(`
           INSERT INTO logs (device_id, original_sn, custom_sn, department_id, action, staff_id, timestamp)
           VALUES (?, ?, ?, ?, 'CHECK_IN', ?, datetime('now', 'localtime'))
-        `).run(device.id, device.original_sn, device.custom_sn, department_id, prevStaff);
+        `).run(device.id, device.original_sn, device.custom_sn, txnDept, prevStaff);
       }
 
       // Perform Check-Out
@@ -787,10 +783,10 @@ app.post('/api/scan', (req, res) => {
         WHERE id = ?
       `).run(staff_id, device.id);
 
-      const logResult = db.prepare(`
+      db.prepare(`
         INSERT INTO logs (device_id, original_sn, custom_sn, department_id, action, staff_id, timestamp)
         VALUES (?, ?, ?, ?, 'CHECK_OUT', ?, datetime('now', 'localtime'))
-      `).run(device.id, device.original_sn, device.custom_sn, department_id, staff_id);
+      `).run(device.id, device.original_sn, device.custom_sn, txnDept, staff_id);
 
       const updatedDevice = db.prepare('SELECT * FROM devices WHERE id = ?').get(device.id);
 
@@ -828,14 +824,14 @@ app.post('/api/scan', (req, res) => {
       db.prepare(`
         INSERT INTO logs (device_id, original_sn, custom_sn, department_id, action, staff_id, timestamp)
         VALUES (?, ?, ?, ?, 'CHECK_IN', ?, datetime('now', 'localtime'))
-      `).run(device.id, device.original_sn, device.custom_sn, department_id, returningStaff);
+      `).run(device.id, device.original_sn, device.custom_sn, txnDept, returningStaff);
 
       const updatedDevice = db.prepare('SELECT * FROM devices WHERE id = ?').get(device.id);
 
       return res.json({
         success: true,
         action: 'CHECK_IN',
-        message: `📥 คืนเข้าตู้สำเร็จ! PDA [${device.custom_sn}] เสียบชาร์จในตู้ ${department_id} เรียบร้อย`,
+        message: `📥 คืนเข้าตู้สำเร็จ! PDA [${device.custom_sn}] เสียบชาร์จในตู้ ${txnDept} เรียบร้อย`,
         device: updatedDevice,
         staff_id: returningStaff,
         timestamp: updatedDevice.last_action_at
@@ -844,7 +840,8 @@ app.post('/api/scan', (req, res) => {
 
     return res.status(400).json({ success: false, message: 'การดำเนินการไม่ถูกต้อง' });
   } catch (err) {
-    res.status(500).json({ success: false, error: err.message });
+    console.error('Scan error:', err);
+    res.status(500).json({ success: false, message: `เกิดข้อผิดพลาดในการทำรายการ: ${err.message}`, error: err.message });
   }
 });
 
@@ -861,7 +858,7 @@ app.post('/api/scan/batch', (req, res) => {
     }
 
     if (!department_id) {
-      return res.status(400).json({ success: false, message: 'กรุณาระบุตู้/แผนกที่กำลังทำรายการ' });
+      department_id = 'OBD A';
     }
 
     if (action === 'CHECK_OUT' && !staff_id) {
@@ -876,7 +873,7 @@ app.post('/api/scan/batch', (req, res) => {
       const findStmt = db.prepare(`
         SELECT dev.*, d.name as department_name 
         FROM devices dev
-        JOIN departments d ON dev.department_id = d.id
+        LEFT JOIN departments d ON dev.department_id = d.id
         WHERE dev.original_sn = ? COLLATE NOCASE OR dev.custom_sn = ? COLLATE NOCASE
       `);
 
@@ -908,7 +905,7 @@ app.post('/api/scan/batch', (req, res) => {
         if (!str) continue;
         const tokens = str.split(/[\s,;\t\r\n]+/).filter(Boolean);
         for (const t of tokens) {
-          const directDev = findDeviceStmt.get(t, t);
+          const directDev = findStmt.get(t, t);
           if (directDev) {
             expandedCodes.push(t);
             continue;
@@ -932,17 +929,17 @@ app.post('/api/scan/batch', (req, res) => {
           continue;
         }
 
-        // Allow transaction seamlessly across all kiosks
+        const itemDept = department_id || device.department_id || 'OBD A';
 
         if (action === 'CHECK_OUT') {
           if (device.status === 'CHECKED_OUT') {
             // Auto-log return of previous holder so device can be smoothly transferred to new staff
             const prevStaff = device.current_staff_id || 'AUTO_TRANSFER';
-            insertLogStmt.run(device.id, device.original_sn, device.custom_sn, department_id, 'CHECK_IN', prevStaff);
+            insertLogStmt.run(device.id, device.original_sn, device.custom_sn, itemDept, 'CHECK_IN', prevStaff);
           }
 
           updateCheckoutStmt.run(staff_id, device.id);
-          insertLogStmt.run(device.id, device.original_sn, device.custom_sn, department_id, 'CHECK_OUT', staff_id);
+          insertLogStmt.run(device.id, device.original_sn, device.custom_sn, itemDept, 'CHECK_OUT', staff_id);
           processed.push({ id: device.id, custom_sn: device.custom_sn, original_sn: device.original_sn });
         } else if (action === 'CHECK_IN') {
           if (device.status === 'IN_CABINET') {
@@ -956,7 +953,7 @@ app.post('/api/scan/batch', (req, res) => {
 
           const returningStaff = staff_id || device.current_staff_id || 'RETURN';
           updateCheckinStmt.run(device.id);
-          insertLogStmt.run(device.id, device.original_sn, device.custom_sn, department_id, 'CHECK_IN', returningStaff);
+          insertLogStmt.run(device.id, device.original_sn, device.custom_sn, itemDept, 'CHECK_IN', returningStaff);
           processed.push({ id: device.id, custom_sn: device.custom_sn, original_sn: device.original_sn });
         }
       }
@@ -967,7 +964,11 @@ app.post('/api/scan/batch', (req, res) => {
       throw err;
     }
 
-    res.json({
+    const msg = processed.length > 0
+      ? (action === 'CHECK_OUT' ? `เบิกสำเร็จ ${processed.length} เครื่อง (พนักงาน: ${staff_id})` : `คืนเข้าตู้สำเร็จ ${processed.length} เครื่อง`)
+      : (errors.length > 0 ? errors.map(e => e.message).join(' | ') : 'เกิดข้อผิดพลาดในการทำรายการ');
+
+    res.status(processed.length > 0 ? 200 : 400).json({
       success: processed.length > 0,
       total: codes.length,
       processedCount: processed.length,
@@ -976,12 +977,11 @@ app.post('/api/scan/batch', (req, res) => {
       errors,
       action,
       staff_id,
-      message: processed.length > 0
-        ? (action === 'CHECK_OUT' ? `เบิกสำเร็จ ${processed.length} เครื่อง (พนักงาน: ${staff_id})` : `คืนเข้าตู้สำเร็จ ${processed.length} เครื่อง`)
-        : (errors.length > 0 ? errors.map(e => e.message).join(' | ') : 'เกิดข้อผิดพลาดในการทำรายการ')
+      message: msg
     });
   } catch (err) {
-    res.status(500).json({ success: false, error: err.message });
+    console.error('Batch scan error:', err);
+    res.status(500).json({ success: false, message: `เกิดข้อผิดพลาดในการทำรายการ: ${err.message}`, error: err.message });
   }
 });
 

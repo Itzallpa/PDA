@@ -623,14 +623,15 @@ async function submitBatchOrSingle() {
   submitBtn.style.opacity = '0.7';
 
   try {
-    const codes = currentBatchDevices.map(d => d.custom_sn);
+    const codes = currentBatchDevices.map(d => d.custom_sn || d.original_sn);
+    const resolvedDept = currentDeptId || (currentBatchDevices[0] && currentBatchDevices[0].department_id) || 'OBD A';
     const res = await fetch('/api/scan/batch', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         codes,
         staff_id,
-        department_id: currentDeptId,
+        department_id: resolvedDept,
         action: currentMode
       })
     });
@@ -650,7 +651,7 @@ async function submitBatchOrSingle() {
       showFeedback('success', `
         <strong>${actionText} ${data.processedCount} เครื่อง!</strong><br>
         รายการ: ${deviceNames}<br>
-        ${currentMode === 'CHECK_OUT' ? `พนักงานผู้เบิก: <strong>${data.staff_id}</strong>` : `คืนเข้าตู้แผนก: <strong>${currentDeptId}</strong>`}
+        ${currentMode === 'CHECK_OUT' ? `พนักงานผู้เบิก: <strong>${data.staff_id}</strong>` : `คืนเข้าตู้แผนก: <strong>${resolvedDept}</strong>`}
       `);
 
       // Clear batch list
@@ -670,8 +671,8 @@ async function submitBatchOrSingle() {
       setTimeout(() => scannerBox.classList.remove('flash-error'), 800);
 
       const errorDetails = (data.errors && data.errors.length > 0)
-        ? data.errors.map(e => e.message).join('<br>')
-        : (data.message || 'เกิดข้อผิดพลาดในการทำรายการ');
+        ? data.errors.map(e => e.message || e.error || e.code).join('<br>')
+        : (data.message || data.error || 'เกิดข้อผิดพลาดในการทำรายการ');
       showFeedback('error', errorDetails);
     }
   } catch (err) {

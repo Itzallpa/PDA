@@ -523,7 +523,7 @@ def resolve_device(code):
     cur.execute('''
         SELECT dev.*, d.name as department_name, d.description as department_desc
         FROM devices dev
-        JOIN departments d ON dev.department_id = d.id
+        LEFT JOIN departments d ON dev.department_id = d.id
         WHERE dev.original_sn = ? COLLATE NOCASE OR dev.custom_sn = ? COLLATE NOCASE
     ''', (raw_code, raw_code))
     single = cur.fetchone()
@@ -540,7 +540,7 @@ def resolve_device(code):
             cur.execute('''
                 SELECT dev.*, d.name as department_name, d.description as department_desc
                 FROM devices dev
-                JOIN departments d ON dev.department_id = d.id
+                LEFT JOIN departments d ON dev.department_id = d.id
                 WHERE dev.original_sn = ? COLLATE NOCASE OR dev.custom_sn = ? COLLATE NOCASE
             ''', (sc, sc))
             d = cur.fetchone()
@@ -783,7 +783,7 @@ def scan_device():
     if not code:
         return jsonify({'success': False, 'errorType': 'MISSING_CODE', 'message': 'กรุณากรอกหรือยิงสแกนรหัส PDA'}), 400
     if not department_id:
-        return jsonify({'success': False, 'errorType': 'MISSING_DEPARTMENT', 'message': 'กรุณาระบุตู้/แผนกที่กำลังทำรายการ'}), 400
+        department_id = 'OBD A'
 
     db = get_db()
     cur = db.cursor()
@@ -791,7 +791,7 @@ def scan_device():
     cur.execute('''
         SELECT dev.*, d.name as department_name 
         FROM devices dev
-        JOIN departments d ON dev.department_id = d.id
+        LEFT JOIN departments d ON dev.department_id = d.id
         WHERE dev.original_sn = ? COLLATE NOCASE OR dev.custom_sn = ? COLLATE NOCASE
     ''', (code, code))
     device = cur.fetchone()
@@ -803,7 +803,7 @@ def scan_device():
     device = dict(device)
     
     # Log transaction under cabinet or device department seamlessly
-    txn_dept = department_id or device['department_id']
+    txn_dept = department_id or device.get('department_id') or 'OBD A'
 
     target_action = action
     if action == 'AUTO':
@@ -820,7 +820,7 @@ def scan_device():
             cur.execute('''
                 INSERT INTO logs (device_id, original_sn, custom_sn, department_id, action, staff_id, timestamp)
                 VALUES (?, ?, ?, ?, 'CHECK_IN', ?, datetime('now', 'localtime'))
-            ''', (device['id'], device['original_sn'], device['custom_sn'], department_id, prev_staff))
+            ''', (device['id'], device['original_sn'], device['custom_sn'], txn_dept, prev_staff))
 
         cur.execute('''
             UPDATE devices
@@ -832,7 +832,7 @@ def scan_device():
         cur.execute('''
             INSERT INTO logs (device_id, original_sn, custom_sn, department_id, action, staff_id, timestamp)
             VALUES (?, ?, ?, ?, 'CHECK_OUT', ?, datetime('now', 'localtime'))
-        ''', (device['id'], device['original_sn'], device['custom_sn'], department_id, staff_id))
+        ''', (device['id'], device['original_sn'], device['custom_sn'], txn_dept, staff_id))
         db.commit()
 
         cur.execute('SELECT * FROM devices WHERE id = ?', (device['id'],))
@@ -864,7 +864,7 @@ def scan_device():
         cur.execute('''
             INSERT INTO logs (device_id, original_sn, custom_sn, department_id, action, staff_id, timestamp)
             VALUES (?, ?, ?, ?, 'CHECK_IN', ?, datetime('now', 'localtime'))
-        ''', (device['id'], device['original_sn'], device['custom_sn'], department_id, returning_staff))
+        ''', (device['id'], device['original_sn'], device['custom_sn'], txn_dept, returning_staff))
         db.commit()
 
         cur.execute('SELECT * FROM devices WHERE id = ?', (device['id'],))
@@ -874,7 +874,7 @@ def scan_device():
         return jsonify({
             'success': True,
             'action': 'CHECK_IN',
-            'message': f"📥 คืนเข้าตู้สำเร็จ! PDA [{device['custom_sn']}] เสียบชาร์จในตู้ {department_id} เรียบร้อย",
+            'message': f"📥 คืนเข้าตู้สำเร็จ! PDA [{device['custom_sn']}] เสียบชาร์จในตู้ {txn_dept} เรียบร้อย",
             'device': updated,
             'staff_id': returning_staff,
             'timestamp': updated.get('last_action_at')
@@ -894,7 +894,7 @@ def scan_batch():
     if not isinstance(codes, list) or len(codes) == 0:
         return jsonify({'success': False, 'message': 'ไม่มีรหัส PDA ที่ส่งมาทำรายการ'}), 400
     if not department_id:
-        return jsonify({'success': False, 'message': 'กรุณาระบุตู้/แผนกที่กำลังทำรายการ'}), 400
+        department_id = 'OBD A'
     if action == 'CHECK_OUT' and not staff_id:
         return jsonify({'success': False, 'message': 'กรุณากรอกหรือสแกนรหัสพนักงานผู้เบิก'}), 400
 
@@ -916,7 +916,7 @@ def scan_batch():
             cur.execute('''
                 SELECT dev.*, d.name as department_name
                 FROM devices dev
-                JOIN departments d ON dev.department_id = d.id
+                LEFT JOIN departments d ON dev.department_id = d.id
                 WHERE dev.original_sn = ? COLLATE NOCASE OR dev.custom_sn = ? COLLATE NOCASE
             ''', (code, code))
             device = cur.fetchone()
@@ -925,7 +925,7 @@ def scan_batch():
                 continue
 
             device = dict(device)
-            item_dept = department_id or device['department_id']
+            item_dept = department_id or device.get('department_id') or 'OBD A'
 
             if action == 'CHECK_OUT':
                 if device['status'] == 'CHECKED_OUT':
@@ -934,7 +934,7 @@ def scan_batch():
                     cur.execute('''
                         INSERT INTO logs (device_id, original_sn, custom_sn, department_id, action, staff_id, timestamp)
                         VALUES (?, ?, ?, ?, 'CHECK_IN', ?, datetime('now', 'localtime'))
-                    ''', (device['id'], device['original_sn'], device['custom_sn'], department_id, prev_staff))
+                    ''', (device['id'], device['original_sn'], device['custom_sn'], item_dept, prev_staff))
                 cur.execute('''
                     UPDATE devices
                     SET status = 'CHECKED_OUT',
@@ -945,7 +945,7 @@ def scan_batch():
                 cur.execute('''
                     INSERT INTO logs (device_id, original_sn, custom_sn, department_id, action, staff_id, timestamp)
                     VALUES (?, ?, ?, ?, 'CHECK_OUT', ?, datetime('now', 'localtime'))
-                ''', (device['id'], device['original_sn'], device['custom_sn'], department_id, staff_id))
+                ''', (device['id'], device['original_sn'], device['custom_sn'], item_dept, staff_id))
                 processed.append({'id': device['id'], 'custom_sn': device['custom_sn'], 'original_sn': device['original_sn']})
 
             elif action == 'CHECK_IN':
@@ -967,14 +967,16 @@ def scan_batch():
                 cur.execute('''
                     INSERT INTO logs (device_id, original_sn, custom_sn, department_id, action, staff_id, timestamp)
                     VALUES (?, ?, ?, ?, 'CHECK_IN', ?, datetime('now', 'localtime'))
-                ''', (device['id'], device['original_sn'], device['custom_sn'], department_id, returning_staff))
+                ''', (device['id'], device['original_sn'], device['custom_sn'], item_dept, returning_staff))
                 processed.append({'id': device['id'], 'custom_sn': device['custom_sn'], 'original_sn': device['original_sn']})
 
         db.commit()
     except Exception as e:
+        import traceback
+        traceback.print_exc()
         db.rollback()
         db.close()
-        return jsonify({'success': False, 'error': str(e)}), 500
+        return jsonify({'success': False, 'message': f'เกิดข้อผิดพลาดในการทำรายการ: {str(e)}', 'error': str(e)}), 500
 
     db.close()
     if len(processed) > 0:
@@ -991,7 +993,7 @@ def scan_batch():
         'action': action,
         'staff_id': staff_id,
         'message': msg
-    })
+    }), 200 if len(processed) > 0 else 400
 
 @app.route('/api/logs', methods=['GET'])
 def get_logs():
