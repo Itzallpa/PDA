@@ -7,6 +7,7 @@ import io
 import json
 import hashlib
 import sqlite3
+import urllib.parse
 from datetime import datetime
 
 if hasattr(sys.stdout, 'reconfigure'):
@@ -808,9 +809,13 @@ def scan_device():
             db.close()
             return jsonify({'success': False, 'errorType': 'MISSING_STAFF_ID', 'message': 'กรุณากรอกหรือสแกนรหัสพนักงานผู้เบิกก่อนทำรายการ'}), 400
 
-        if device['status'] == 'CHECKED_OUT' and action == 'CHECK_OUT':
-            db.close()
-            return jsonify({'success': False, 'errorType': 'ALREADY_CHECKED_OUT', 'message': f"⚠️ อุปกรณ์นี้ถูกเบิกออกไปแล้วโดยพนักงาน \"{device.get('current_staff_id') or 'ไม่ทราบ'}\""}), 400
+        if device['status'] == 'CHECKED_OUT':
+            # Auto-log return of previous holder so device can be smoothly checked out to the new staff
+            prev_staff = device.get('current_staff_id') or 'AUTO_TRANSFER'
+            cur.execute('''
+                INSERT INTO logs (device_id, original_sn, custom_sn, department_id, action, staff_id, timestamp)
+                VALUES (?, ?, ?, ?, 'CHECK_IN', ?, datetime('now', 'localtime'))
+            ''', (device['id'], device['original_sn'], device['custom_sn'], department_id, prev_staff))
 
         cur.execute('''
             UPDATE devices
@@ -930,12 +935,12 @@ def scan_batch():
 
             if action == 'CHECK_OUT':
                 if device['status'] == 'CHECKED_OUT':
-                    errors.append({
-                        'code': code,
-                        'custom_sn': device['custom_sn'],
-                        'message': f"[{device['custom_sn']}] ถูกเบิกออกไปแล้วโดยพนักงาน \"{device.get('current_staff_id') or 'ไม่ทราบ'}\""
-                    })
-                    continue
+                    # Auto log return from previous holder
+                    prev_staff = device.get('current_staff_id') or 'AUTO_TRANSFER'
+                    cur.execute('''
+                        INSERT INTO logs (device_id, original_sn, custom_sn, department_id, action, staff_id, timestamp)
+                        VALUES (?, ?, ?, ?, 'CHECK_IN', ?, datetime('now', 'localtime'))
+                    ''', (device['id'], device['original_sn'], device['custom_sn'], department_id, prev_staff))
                 cur.execute('''
                     UPDATE devices
                     SET status = 'CHECKED_OUT',

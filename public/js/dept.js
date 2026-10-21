@@ -192,7 +192,7 @@ function setupScanInputListeners() {
   const pdaInput = document.getElementById('input-pda-code');
   const btnClearStaff = document.getElementById('btn-clear-staff');
 
-  // When staff barcode is scanned (hits Enter or Tab) -> auto jump to PDA code input
+  // When staff barcode / ID is scanned or entered (Enter or Tab)
   staffInput.addEventListener('keydown', (e) => {
     if (e.key === 'Enter' || e.key === 'Tab') {
       e.preventDefault();
@@ -200,8 +200,14 @@ function setupScanInputListeners() {
       if (val) {
         if (window.soundManager) window.soundManager.playBeep();
         if (btnClearStaff) btnClearStaff.style.display = 'inline';
-        pdaInput.focus();
-        pdaInput.select();
+        
+        // If PDA devices are already staged in batch queue, confirm/submit immediately!
+        if (currentBatchDevices.length > 0) {
+          submitBatchOrSingle();
+        } else {
+          pdaInput.focus();
+          pdaInput.select();
+        }
       }
     }
   });
@@ -212,127 +218,22 @@ function setupScanInputListeners() {
     }
   });
 
-  // Strict Scan-Only Protection on PDA Barcode Input
-  let pdaKeyTimestamps = [];
-  let pdaIsHumanTyping = false;
-  let pdaResetTimer = null;
-
-  function flashPdaWarning(msg) {
-    if (window.soundManager) window.soundManager.playError();
-    pdaInput.value = '';
-    showResultBanner(false, msg);
-    pdaInput.style.borderColor = '#dc2626';
-    pdaInput.style.boxShadow = '0 0 0 3px rgba(220, 38, 38, 0.2)';
-    setTimeout(() => {
-      pdaInput.style.borderColor = '';
-      pdaInput.style.boxShadow = '';
-    }, 1200);
-  }
-
-  ['paste', 'drop'].forEach(evt => {
-    pdaInput.addEventListener(evt, (e) => {
-      e.preventDefault();
-      pdaInput.value = '';
-      pdaKeyTimestamps = [];
-      pdaIsHumanTyping = false;
-      flashPdaWarning('🚫 ไม่อนุญาตให้ Copy / Paste หรือวางข้อความ — กรุณาใช้เครื่องยิงสแกนบาร์โค้ดเท่านั้น!');
-    });
-  });
-
-  ['cut', 'contextmenu'].forEach(evt => {
-    pdaInput.addEventListener(evt, (e) => e.preventDefault());
-  });
-
-  // When PDA barcode / QR is scanned (hits Enter or Tab)
+  // When PDA barcode / QR is scanned or entered (Enter or Tab)
   pdaInput.addEventListener('keydown', (e) => {
-    if ((e.ctrlKey || e.metaKey) && (e.key === 'v' || e.key === 'V' || e.key === 'Insert')) {
-      e.preventDefault();
-      pdaInput.value = '';
-      flashPdaWarning('🚫 ไม่อนุญาตให้กดวางข้อความ (Ctrl+V) — กรุณาใช้เครื่องยิงสแกนเท่านั้น!');
-      return;
-    }
-
-    if (['Shift', 'Control', 'Alt', 'Meta', 'CapsLock', 'Tab'].includes(e.key)) return;
-
-    if (e.key === 'Backspace' || e.key === 'Delete') {
-      e.preventDefault();
-      pdaInput.value = '';
-      pdaKeyTimestamps = [];
-      flashPdaWarning('🚫 ไม่อนุญาตให้แก้ไขด้วยมือ — กรุณาใช้เครื่องยิงสแกนบาร์โค้ดเท่านั้น!');
-      return;
-    }
-
-    const now = performance.now();
-
-    if (e.key === 'Enter') {
+    if (e.key === 'Enter' || e.key === 'Tab') {
       e.preventDefault();
       clearTimeout(autoAddTimeout);
-      clearTimeout(pdaResetTimer);
       const val = pdaInput.value.trim();
 
       if (!val) {
         if (currentBatchDevices.length > 0) {
           submitBatchOrSingle();
         }
-        pdaKeyTimestamps = [];
-        pdaIsHumanTyping = false;
         return;
       }
 
-      // Check if it was human typed
-      if (pdaIsHumanTyping || pdaKeyTimestamps.length < 2) {
-        pdaInput.value = '';
-        pdaKeyTimestamps = [];
-        pdaIsHumanTyping = false;
-        flashPdaWarning('🚫 ไม่อนุญาตให้พิมพ์ด้วยคีย์บอร์ด — ระบบล็อกให้ใช้เครื่องยิงสแกนบาร์โค้ดเท่านั้น!');
-        return;
-      }
-
-      let total = 0;
-      let maxInt = 0;
-      for (let i = 1; i < pdaKeyTimestamps.length; i++) {
-        const diff = pdaKeyTimestamps[i] - pdaKeyTimestamps[i - 1];
-        total += diff;
-        if (diff > maxInt) maxInt = diff;
-      }
-      const avg = total / (pdaKeyTimestamps.length - 1);
-
-      if (avg > 50 || maxInt > 85) {
-        pdaInput.value = '';
-        pdaKeyTimestamps = [];
-        pdaIsHumanTyping = false;
-        flashPdaWarning('🚫 ตรวจพบการพิมพ์ด้วยมือ — ระบบอนุญาตเฉพาะการยิงสแกนบาร์โค้ดเท่านั้น!');
-        return;
-      }
-
-      // Valid barcode scanner scan!
-      pdaKeyTimestamps = [];
-      pdaIsHumanTyping = false;
       pdaInput.value = '';
       processInputCodes(val);
-      return;
-    }
-
-    if (e.key.length === 1) {
-      if (pdaKeyTimestamps.length > 0) {
-        const diff = now - pdaKeyTimestamps[pdaKeyTimestamps.length - 1];
-        if (diff > 50) {
-          pdaIsHumanTyping = true;
-          e.preventDefault();
-          pdaInput.value = '';
-          pdaKeyTimestamps = [];
-          flashPdaWarning('🚫 ไม่อนุญาตให้พิมพ์ด้วยมือ — ระบบล็อกให้ใช้เครื่องยิงสแกนบาร์โค้ดเท่านั้น!');
-          return;
-        }
-      }
-
-      pdaKeyTimestamps.push(now);
-
-      clearTimeout(pdaResetTimer);
-      pdaResetTimer = setTimeout(() => {
-        pdaKeyTimestamps = [];
-        pdaIsHumanTyping = false;
-      }, 300);
     }
   });
 
@@ -465,21 +366,6 @@ async function processInputCodes(rawInput) {
 
   const staffInput = document.getElementById('input-staff-id');
   const pdaInput = document.getElementById('input-pda-code');
-  const scannerBox = document.getElementById('scanner-box');
-
-  const staff_id = staffInput.value.trim();
-
-  // Check Staff ID requirement for Check-Out
-  if (currentMode === 'CHECK_OUT' && !staff_id) {
-    if (window.soundManager) window.soundManager.playError();
-    scannerBox.classList.remove('flash-success');
-    scannerBox.classList.add('flash-error');
-    setTimeout(() => scannerBox.classList.remove('flash-error'), 800);
-
-    showFeedback('error', '⚠️ กรุณาสแกนหรือกรอก "รหัสพนักงาน" ผู้เบิกก่อนสแกน PDA');
-    staffInput.focus();
-    return false;
-  }
 
   let addedCount = 0;
   for (const code of codes) {
@@ -487,8 +373,14 @@ async function processInputCodes(rawInput) {
     if (success) addedCount++;
   }
 
+  const staff_id = staffInput.value.trim();
   if (addedCount > 0) {
     if (window.soundManager) window.soundManager.playBeep();
+    if (currentMode === 'CHECK_OUT' && !staff_id) {
+      showFeedback('info', `✅ สแกนเครื่องเข้าชุดแล้ว (${currentBatchDevices.length} เครื่อง)<br>👉 กรุณาสแกนหรือกรอก <strong>"รหัสพนักงาน"</strong> เพื่อยืนยันการเบิก`);
+      staffInput.focus();
+      return true;
+    }
   }
 
   pdaInput.focus();
@@ -500,11 +392,19 @@ function addPdaToBatch(code) {
   return processInputCodes(code);
 }
 
+// One-click switch to CHECK_OUT and stage device
+window.switchAndQueue = async function(customSn) {
+  setMode('CHECK_OUT');
+  await processInputCodes(customSn);
+};
+
 async function addSinglePdaToBatch(code) {
   const cleanCode = (code || '').trim();
   if (!cleanCode) return false;
 
   const scannerBox = document.getElementById('scanner-box');
+  const staffInput = document.getElementById('input-staff-id');
+  const pdaInput = document.getElementById('input-pda-code');
 
   // Check if device is already in current batch queue
   const isAlreadyInQueue = currentBatchDevices.some(
@@ -512,7 +412,7 @@ async function addSinglePdaToBatch(code) {
   );
   if (isAlreadyInQueue) {
     if (window.soundManager) window.soundManager.playBeep();
-    showFeedback('error', `ℹ️ รหัส "${cleanCode}" ถูกเพิ่มไว้ในชุดรายการนี้แล้ว`);
+    showFeedback('info', `ℹ️ รหัส "${cleanCode}" ถูกเพิ่มไว้ในชุดรายการนี้แล้ว`);
     return false;
   }
 
@@ -522,6 +422,25 @@ async function addSinglePdaToBatch(code) {
     const data = await res.json();
 
     if (!data.success || !data.device) {
+      // If code was not found as a device, check if staff ID is empty
+      // If so, the user likely scanned their staff ID card into the scanner!
+      if (!staffInput.value.trim() && cleanCode.length >= 3 && currentMode === 'CHECK_OUT') {
+        staffInput.value = cleanCode;
+        const btnClearStaff = document.getElementById('btn-clear-staff');
+        if (btnClearStaff) btnClearStaff.style.display = 'inline';
+        if (window.soundManager) window.soundManager.playBeep();
+
+        if (currentBatchDevices.length > 0) {
+          // If there are already PDAs queued, submit now!
+          submitBatchOrSingle();
+          return false;
+        }
+
+        showFeedback('success', `👤 บันทึกรหัสพนักงาน: <strong>${cleanCode}</strong> เรียบร้อยแล้ว 👉 สแกนรหัส PDA ต่อได้เลย`);
+        pdaInput.focus();
+        return false;
+      }
+
       if (window.soundManager) window.soundManager.playError();
       scannerBox.classList.remove('flash-success');
       scannerBox.classList.add('flash-error');
@@ -565,32 +484,33 @@ async function addSinglePdaToBatch(code) {
 
     // Status Validations with Actionable Guidance
     if (currentMode === 'CHECK_OUT' && device.status === 'CHECKED_OUT') {
-      if (window.soundManager) window.soundManager.playError();
-      scannerBox.classList.remove('flash-success');
-      scannerBox.classList.add('flash-error');
-      setTimeout(() => scannerBox.classList.remove('flash-error'), 800);
-
-      showFeedback('error', `
-        <div style="font-size: 1.05rem; font-weight: 700; color: #dc2626; margin-bottom: 0.25rem;">
-          ⚠️ เครื่องนี้ไม่อยู่ในตู้ (ถูกเบิกออกไปแล้ว)
+      // In warehouse, if device was marked CHECKED_OUT in system but is physically present in cabinet:
+      // Allow taking it out and auto-transferring to the new staff!
+      device.autoTransferFrom = device.current_staff_id;
+      if (window.soundManager) window.soundManager.playBeep();
+      showFeedback('info', `
+        <div style="font-size: 1rem; font-weight: 700; color: #b45309; margin-bottom: 0.25rem;">
+          🔄 นำเครื่อง [${device.custom_sn}] เข้าชุดเบิกออกแล้ว
         </div>
-        <div>เบิกไปโดยพนักงาน: <strong>${device.current_staff_id || 'ไม่ทราบ'}</strong><br>
-        <em>💡 หากนำเครื่องกลับมาคืน ให้กดสลับปุ่มเป็น <strong>"คืนเข้าตู้"</strong> สีเขียวด้านบน</em></div>
+        <div style="font-size: 0.85rem; color: #92400e;">
+          (เดิมค้างชื่อผู้เบิก: ${device.current_staff_id || 'คนก่อนหน้า'} — ระบบจะโอนย้ายชื่อเป็นผู้เบิกใหม่ให้อัตโนมัติเมื่อยืนยัน)
+        </div>
       `);
-      return false;
+      addDeviceToQueueDirect(device);
+      renderBatchList();
+      return true;
     }
 
     if (currentMode === 'CHECK_IN' && device.status === 'IN_CABINET') {
-      if (window.soundManager) window.soundManager.playError();
-      scannerBox.classList.remove('flash-success');
-      scannerBox.classList.add('flash-error');
-      setTimeout(() => scannerBox.classList.remove('flash-error'), 800);
-
-      showFeedback('error', `
+      if (window.soundManager) window.soundManager.playBeep();
+      showFeedback('info', `
         <div style="font-size: 1.05rem; font-weight: 700; color: #2563eb; margin-bottom: 0.25rem;">
-          ℹ️ เครื่องนี้อยู่ในตู้ชาร์จเรียบร้อยแล้ว
+          ℹ️ เครื่อง [${device.custom_sn}] อยู่ในตู้ชาร์จเรียบร้อยแล้ว
         </div>
-        <div>พร้อมใช้งาน! หากต้องการเบิกเครื่องออกไปใช้ ให้กดสลับปุ่มเป็น <strong>"เบิกออก"</strong> สีน้ำเงินด้านบน</div>
+        <div style="margin-bottom: 0.45rem; color: #1e3a8a;">พร้อมใช้งาน! ต้องการเบิกเครื่องนี้ออกไปใช้ใช่หรือไม่?</div>
+        <button type="button" onclick="switchAndQueue('${device.custom_sn}')" style="display: inline-block; padding: 0.5rem 1rem; background: #2563eb; color: #fff; border: none; border-radius: 6px; font-weight: 700; cursor: pointer; font-size: 0.92rem;">
+          👉 คลิกเพื่อสลับเป็น "เบิกออก" เครื่องนี้ทันที
+        </button>
       `);
       return false;
     }
@@ -780,9 +700,12 @@ function showFeedback(type, htmlContent) {
   const title = document.getElementById('result-title');
   const msg = document.getElementById('result-message');
 
+  banner.style.display = 'block';
   banner.className = `result-banner ${type}`;
   if (type === 'success') {
     title.innerHTML = 'รายการสำเร็จ';
+  } else if (type === 'info') {
+    title.innerHTML = 'แจ้งเตือน / แนะนำขั้นตอน';
   } else {
     title.innerHTML = 'ข้อผิดพลาด';
   }

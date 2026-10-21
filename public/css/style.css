@@ -970,6 +970,13 @@ header.app-header {
   color: #7f1d1d;
 }
 
+.result-banner.info {
+  display: block;
+  background: var(--blue-subtle);
+  border: 1px solid var(--blue-border);
+  color: #1e3a8a;
+}
+
 .result-banner h4 {
   font-size: 0.95rem;
   font-weight: 600;

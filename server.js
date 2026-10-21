@@ -757,12 +757,13 @@ app.post('/api/scan', (req, res) => {
         });
       }
 
-      if (device.status === 'CHECKED_OUT' && action === 'CHECK_OUT') {
-        return res.status(400).json({
-          success: false,
-          errorType: 'ALREADY_CHECKED_OUT',
-          message: `⚠️ อุปกรณ์นี้ถูกเบิกออกไปแล้วโดยพนักงาน "${device.current_staff_id || 'ไม่ทราบ'}" เมื่อ ${device.last_action_at || ''}`
-        });
+      if (device.status === 'CHECKED_OUT') {
+        // Auto-log return of previous holder so device can be smoothly checked out to the new staff
+        const prevStaff = device.current_staff_id || 'AUTO_TRANSFER';
+        db.prepare(`
+          INSERT INTO logs (device_id, original_sn, custom_sn, department_id, action, staff_id, timestamp)
+          VALUES (?, ?, ?, ?, 'CHECK_IN', ?, datetime('now', 'localtime'))
+        `).run(device.id, device.original_sn, device.custom_sn, department_id, prevStaff);
       }
 
       // Perform Check-Out
@@ -932,12 +933,9 @@ app.post('/api/scan/batch', (req, res) => {
 
         if (action === 'CHECK_OUT') {
           if (device.status === 'CHECKED_OUT') {
-            errors.push({
-              code,
-              custom_sn: device.custom_sn,
-              message: `[${device.custom_sn}] ถูกเบิกออกไปแล้วโดยพนักงาน "${device.current_staff_id || 'ไม่ทราบ'}"`
-            });
-            continue;
+            // Auto-log return of previous holder so device can be smoothly transferred to new staff
+            const prevStaff = device.current_staff_id || 'AUTO_TRANSFER';
+            insertLogStmt.run(device.id, device.original_sn, device.custom_sn, department_id, 'CHECK_IN', prevStaff);
           }
 
           updateCheckoutStmt.run(staff_id, device.id);
