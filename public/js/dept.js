@@ -462,24 +462,9 @@ async function addSinglePdaToBatch(code) {
 
     const device = data.device;
 
-    // Smart Department Validation (Tolerant of space / casing / prefixes like OBD vs OBD A)
-    if (!isDepartmentCompatible(device.department_id, currentDeptId)) {
-      if (window.soundManager) window.soundManager.playError();
-      scannerBox.classList.remove('flash-success');
-      scannerBox.classList.add('flash-error');
-      setTimeout(() => scannerBox.classList.remove('flash-error'), 800);
-
-      showFeedback('error', `
-        <div style="font-size: 1.05rem; font-weight: 700; color: #dc2626; margin-bottom: 0.3rem;">
-          ⛔ ตู้ไม่ถูกต้อง!
-        </div>
-        <div>อุปกรณ์ [<strong>${device.custom_sn}</strong> / ${device.original_sn}] สังกัดตู้แผนก "<strong>${device.department_id}</strong>"<br>
-        (ตู้ปัจจุบันคือ "${currentDeptId}")<br><br>
-        👉 <a href="/dept/${encodeURIComponent(device.department_id)}" style="display: inline-block; margin-top: 0.4rem; padding: 0.4rem 0.8rem; background: #2563eb; color: #ffffff; border-radius: 6px; font-weight: 600; text-decoration: none;">
-          คลิกที่นี่เพื่อเปิดหน้าตู้ ${device.department_id}
-        </a></div>
-      `);
-      return false;
+    // Tolerant department handling - Allow scanning any device smoothly across cabinets
+    if (device.department_id && currentDeptId && !isDepartmentCompatible(device.department_id, currentDeptId)) {
+      device.assigned_dept_notice = device.department_id;
     }
 
     // Status Validations with Actionable Guidance
@@ -684,7 +669,10 @@ async function submitBatchOrSingle() {
       scannerBox.classList.add('flash-error');
       setTimeout(() => scannerBox.classList.remove('flash-error'), 800);
 
-      showFeedback('error', data.message || 'เกิดข้อผิดพลาดในการทำรายการ');
+      const errorDetails = (data.errors && data.errors.length > 0)
+        ? data.errors.map(e => e.message).join('<br>')
+        : (data.message || 'เกิดข้อผิดพลาดในการทำรายการ');
+      showFeedback('error', errorDetails);
     }
   } catch (err) {
     if (window.soundManager) window.soundManager.playError();

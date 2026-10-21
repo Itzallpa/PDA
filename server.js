@@ -133,6 +133,32 @@ if (devCount === 0) {
   }
 }
 
+// Ensure OBD A department exists
+db.prepare(`
+  INSERT OR IGNORE INTO departments (id, name, description, display_order)
+  VALUES ('OBD A', 'Outbound Dispatch Zone A', 'จ่ายสินค้าออก Zone A', 8)
+`).run();
+
+// Seed OB devices from seed_ob_devices.json if not present
+const seedFilePath = path.join(__dirname, 'seed_ob_devices.json');
+if (fs.existsSync(seedFilePath)) {
+  try {
+    const obList = JSON.parse(fs.readFileSync(seedFilePath, 'utf8'));
+    const checkDev = db.prepare('SELECT id FROM devices WHERE original_sn = ? OR custom_sn = ?');
+    const addDev = db.prepare(`
+      INSERT INTO devices (original_sn, custom_sn, model, department_id, notes, status, current_staff_id, last_action_at)
+      VALUES (?, ?, ?, ?, ?, 'IN_CABINET', NULL, datetime('now', 'localtime'))
+    `);
+    for (const [orig, cust, model, dept, notes] of obList) {
+      if (!checkDev.get(orig, cust)) {
+        addDev.run(orig, cust, model, dept, notes);
+      }
+    }
+  } catch (err) {
+    console.warn('Error loading seed_ob_devices.json:', err);
+  }
+}
+
 // -------------------------------------------------------------
 // Helper function to find next custom code (e.g. ad001, ad002 ...)
 // -------------------------------------------------------------
@@ -725,21 +751,7 @@ app.post('/api/scan', (req, res) => {
       });
     }
 
-    // 2. Strict Cabinet / Department Enforcement
-    if (!isDeptComp(device.department_id, department_id)) {
-      return res.status(403).json({
-        success: false,
-        errorType: 'WRONG_DEPARTMENT',
-        device: {
-          id: device.id,
-          original_sn: device.original_sn,
-          custom_sn: device.custom_sn,
-          assigned_dept: device.department_id,
-          assigned_dept_name: device.department_name
-        },
-        message: `⛔ ตู้ไม่ถูกต้อง! อุปกรณ์ [${device.custom_sn} / ${device.original_sn}] สังกัดตู้แผนก "${device.department_id} (${device.department_name})" เท่านั้น ไม่อนุญาตให้ทำรายการที่ตู้ "${department_id}"`
-      });
-    }
+    // Allow transaction seamlessly across all kiosks
 
     // 3. Determine actual operation if AUTO
     let targetAction = action;
@@ -920,16 +932,7 @@ app.post('/api/scan/batch', (req, res) => {
           continue;
         }
 
-        // Tolerant department check (casing, space, and prefix tolerant)
-        if (!isDeptComp(device.department_id, department_id)) {
-          errors.push({
-            code,
-            custom_sn: device.custom_sn,
-            assigned_dept: device.department_id,
-            message: `ตู้ไม่ถูกต้อง! [${device.custom_sn}] อยู่สังกัดตู้ "${device.department_id}" ไม่ใช่ "${department_id}"`
-          });
-          continue;
-        }
+        // Allow transaction seamlessly across all kiosks
 
         if (action === 'CHECK_OUT') {
           if (device.status === 'CHECKED_OUT') {
@@ -973,9 +976,9 @@ app.post('/api/scan/batch', (req, res) => {
       errors,
       action,
       staff_id,
-      message: action === 'CHECK_OUT'
-        ? `เบิกสำเร็จ ${processed.length} เครื่อง (พนักงาน: ${staff_id})`
-        : `คืนเข้าตู้สำเร็จ ${processed.length} เครื่อง`
+      message: processed.length > 0
+        ? (action === 'CHECK_OUT' ? `เบิกสำเร็จ ${processed.length} เครื่อง (พนักงาน: ${staff_id})` : `คืนเข้าตู้สำเร็จ ${processed.length} เครื่อง`)
+        : (errors.length > 0 ? errors.map(e => e.message).join(' | ') : 'เกิดข้อผิดพลาดในการทำรายการ')
     });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });

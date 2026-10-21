@@ -123,6 +123,29 @@ def init_db():
                     VALUES (?, ?, ?, ?, 'CHECK_OUT', ?, datetime('now', 'localtime'))
                 ''', (dev_id, orig, cust, dept, staff))
 
+    # Ensure OBD A department exists
+    cur.execute('''
+        INSERT OR IGNORE INTO departments (id, name, description, display_order)
+        VALUES ('OBD A', 'Outbound Dispatch Zone A', 'จ่ายสินค้าออก Zone A', 8)
+    ''')
+
+    # Seed OB devices from seed_ob_devices.json if not present
+    seed_file = os.path.join(BASE_DIR, 'seed_ob_devices.json')
+    if os.path.exists(seed_file):
+        try:
+            with open(seed_file, 'r', encoding='utf-8') as f:
+                ob_data = json.load(f)
+            for item in ob_data:
+                orig, cust, model, dept, notes = item[0], item[1], item[2], item[3], item[4]
+                cur.execute('SELECT id FROM devices WHERE original_sn = ? OR custom_sn = ?', (orig, cust))
+                if not cur.fetchone():
+                    cur.execute('''
+                        INSERT INTO devices (original_sn, custom_sn, model, department_id, notes, status, current_staff_id, last_action_at)
+                        VALUES (?, ?, ?, ?, ?, 'IN_CABINET', NULL, datetime('now', 'localtime'))
+                    ''', (orig, cust, model, dept, notes))
+        except Exception as e:
+            print(f"Error loading seed_ob_devices.json: {e}")
+
     conn.commit()
     conn.close()
 
@@ -779,26 +802,8 @@ def scan_device():
 
     device = dict(device)
     
-    # Helper for department tolerance (OBD vs OBD A vs OBD%20A)
-    import urllib.parse
-    c1 = re.sub(r'[\s\-_]+', '', urllib.parse.unquote(device['department_id'])).upper()
-    c2 = re.sub(r'[\s\-_]+', '', urllib.parse.unquote(department_id)).upper()
-    is_compatible = (c1 == c2) or c1.startswith(c2) or c2.startswith(c1)
-
-    if not is_compatible:
-        db.close()
-        return jsonify({
-            'success': False,
-            'errorType': 'WRONG_DEPARTMENT',
-            'device': {
-                'id': device['id'],
-                'original_sn': device['original_sn'],
-                'custom_sn': device['custom_sn'],
-                'assigned_dept': device['department_id'],
-                'assigned_dept_name': device['department_name']
-            },
-            'message': f"⛔ ตู้ไม่ถูกต้อง! อุปกรณ์ [{device['custom_sn']} / {device['original_sn']}] สังกัดตู้แผนก \"{device['department_id']}\" เท่านั้น ไม่อนุญาตให้ทำรายการที่ตู้ \"{department_id}\""
-        }), 403
+    # Log transaction under cabinet or device department seamlessly
+    txn_dept = department_id or device['department_id']
 
     target_action = action
     if action == 'AUTO':
@@ -920,18 +925,7 @@ def scan_batch():
                 continue
 
             device = dict(device)
-            c1 = re.sub(r'[\s\-_]+', '', urllib.parse.unquote(device['department_id'])).upper()
-            c2 = re.sub(r'[\s\-_]+', '', urllib.parse.unquote(department_id)).upper()
-            is_compatible = (c1 == c2) or c1.startswith(c2) or c2.startswith(c1)
-
-            if not is_compatible:
-                errors.append({
-                    'code': code,
-                    'custom_sn': device['custom_sn'],
-                    'assigned_dept': device['department_id'],
-                    'message': f"ตู้ไม่ถูกต้อง! [{device['custom_sn']}] อยู่สังกัดตู้ \"{device['department_id']}\" ไม่ใช่ \"{department_id}\""
-                })
-                continue
+            item_dept = department_id or device['department_id']
 
             if action == 'CHECK_OUT':
                 if device['status'] == 'CHECKED_OUT':
@@ -983,7 +977,10 @@ def scan_batch():
         return jsonify({'success': False, 'error': str(e)}), 500
 
     db.close()
-    msg = f"เบิกสำเร็จ {len(processed)} เครื่อง (พนักงาน: {staff_id})" if action == 'CHECK_OUT' else f"คืนเข้าตู้สำเร็จ {len(processed)} เครื่อง"
+    if len(processed) > 0:
+        msg = f"เบิกสำเร็จ {len(processed)} เครื่อง (พนักงาน: {staff_id})" if action == 'CHECK_OUT' else f"คืนเข้าตู้สำเร็จ {len(processed)} เครื่อง"
+    else:
+        msg = " | ".join([e.get('message', '') for e in errors]) if errors else "เกิดข้อผิดพลาดในการทำรายการ"
     return jsonify({
         'success': len(processed) > 0,
         'total': len(codes),
