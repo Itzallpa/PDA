@@ -1,0 +1,29 @@
+# Dependencies
+node_modules/
+
+# Local databases and runtime data (Do NOT overwrite SN or device records)
+data/
+*.db
+*.db-wal
+*.db-shm
+*.sqlite
+*.sqlite-wal
+*.sqlite-shm
+*.db-journal
+
+# Uploads, exports, and spreadsheet data
+*.csv
+*.xlsx
+*.xls
+uploads/
+
+# Python cache & logs
+__pycache__/
+*.py[cod]
+*$py.class
+*.log
+
+# Environment & OS files
+.env
+.DS_Store
+Thumbs.db

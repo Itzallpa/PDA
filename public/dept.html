@@ -1,0 +1,182 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>PDA Storage Kiosk - หน้าจอประจำตู้แผนก</title>
+  <link rel="stylesheet" href="/css/style.css">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>📦</text></svg>">
+</head>
+<body class="kiosk-body">
+
+  <!-- Top Kiosk Header -->
+  <header class="app-header">
+    <div class="logo-area">
+      <div class="logo-icon">P</div>
+      <div class="logo-text">
+        <h1>PDA Storage</h1>
+      </div>
+    </div>
+
+    <div style="display: flex; align-items: center; gap: 0.75rem;">
+      <select id="quick-dept-select" class="btn-secondary" style="font-size: 0.82rem; padding: 0.35rem 0.65rem; background: #ffffff; color: var(--text-main); font-weight: 600;" onchange="if(this.value) window.location.href='/dept/' + encodeURIComponent(this.value)">
+        <!-- Populated dynamically with all created departments -->
+      </select>
+      <button class="btn-secondary" id="sound-toggle-btn" onclick="toggleSound()" style="font-size: 0.82rem; padding: 0.3rem 0.65rem;">
+        เสียง: เปิด
+      </button>
+      <div id="live-clock" style="font-family: var(--font-mono); font-size: 0.88rem; color: var(--text-muted); font-weight: 500;">
+        --:--:--
+      </div>
+    </div>
+  </header>
+
+  <!-- Kiosk Department Hero Banner -->
+  <div class="kiosk-hero">
+    <div class="kiosk-hero-content">
+      <div class="kiosk-title-box">
+        <div class="kiosk-dept-code" id="kiosk-dept-badge">IB</div>
+        <div class="kiosk-title-text">
+          <h2 id="kiosk-dept-title">ตู้จัดเก็บ PDA - แผนก Inbound</h2>
+          <p id="kiosk-dept-desc">ประจำแผนกรับเข้าสินค้า</p>
+        </div>
+      </div>
+
+      <!-- Action Mode Buttons -->
+      <div class="kiosk-mode-switch">
+        <button class="kiosk-mode-btn checkout active" id="btn-mode-checkout" onclick="setMode('CHECK_OUT')">
+          เบิกออก
+        </button>
+        <button class="kiosk-mode-btn checkin" id="btn-mode-checkin" onclick="setMode('CHECK_IN')">
+          คืนเข้าตู้
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Kiosk Main Operations Grid -->
+  <div class="kiosk-main-content">
+
+    <!-- Left Column: Scanner Interface -->
+    <div>
+      <div class="scanner-card" id="scanner-box">
+        
+        <!-- Step 1: Staff ID (Shown for Check-Out or Optional for Check-In) -->
+        <div class="scan-input-group" id="group-staff-id">
+          <div class="scan-input-label">
+            <span>1. รหัสพนักงาน (Staff ID) <span class="req" id="req-staff-mark">*</span></span>
+            <button type="button" id="btn-clear-staff" onclick="clearStaffId()" style="display: none; background: transparent; border: none; color: var(--blue); font-size: 0.78rem; cursor: pointer; text-decoration: underline;">
+              เปลี่ยนพนักงาน
+            </button>
+          </div>
+          <div class="scan-input-wrapper">
+            <input type="text" id="input-staff-id" placeholder="ยิงบัตรพนักงาน หรือพิมพ์รหัส..." autocomplete="off" autofocus>
+          </div>
+        </div>
+
+        <!-- Step 2: PDA Barcode / QR Code Input -->
+        <div class="scan-input-group">
+          <div class="scan-input-label">
+            <span>2. รหัส PDA (ยิงเพิ่มเข้าชุดได้หลายเครื่อง) <span class="req">*</span></span>
+            <span id="batch-counter-badge" style="display: none; font-size: 0.78rem; font-weight: 600; padding: 0.1rem 0.45rem; border-radius: 4px; background: var(--blue-subtle); color: var(--blue);">
+              ในชุด: <strong id="batch-count-val">0</strong> เครื่อง
+            </span>
+          </div>
+          <div class="scan-input-wrapper" style="display: flex; gap: 0.5rem;">
+            <input type="text" id="input-pda-code" placeholder="ใช้เครื่องยิงสแกนบาร์โค้ดเท่านั้น (ไม่อนุญาตให้พิมพ์ด้วยมือ หรือ Copy/Paste)..." autocomplete="off" style="flex: 1;" onpaste="return false;" oncopy="return false;" oncut="return false;" oncontextmenu="return false;">
+            <button type="button" class="btn-secondary" id="btn-add-pda" onclick="handleAddPdaButtonClick()" style="padding: 0 1rem; font-weight: 600; white-space: nowrap; font-size: 0.88rem;">
+              + เพิ่มเข้าชุด
+            </button>
+          </div>
+          <div style="font-size: 0.76rem; color: var(--text-muted); margin-top: 0.35rem;">
+            💡 รองรับทั้งรหัสย่อ (Custom Code เช่น OB01) และรหัสโรงงาน (Original SN เช่น MT9055...) สามารถยิงต่อเนื่องได้ทันที
+          </div>
+        </div>
+
+        <!-- Staging Batch Items List -->
+        <div id="batch-items-container" class="batch-items-box" style="display: none;">
+          <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 0.45rem;">
+            <span style="font-size: 0.8rem; color: var(--text-muted); font-weight: 500;">
+              รายการเครื่องในชุดนี้:
+            </span>
+            <button type="button" onclick="clearBatchQueue()" style="background: transparent; border: none; color: var(--red); font-size: 0.78rem; cursor: pointer;">
+              ล้างทั้งหมด
+            </button>
+          </div>
+          <div id="batch-items-list" style="display: flex; flex-direction: column; gap: 0.35rem; max-height: 180px; overflow-y: auto;">
+            <!-- Populated via JS -->
+          </div>
+        </div>
+
+        <!-- Submit Button -->
+        <button class="btn-submit-scan checkout" id="btn-submit" onclick="submitBatchOrSingle()">
+          <span id="submit-text">ยืนยันเบิกออก</span>
+        </button>
+
+        <!-- Camera Scanner Trigger -->
+        <button class="btn-camera-trigger" onclick="openCameraScanner()">
+          เปิดกล้องสแกนบาร์โค้ด
+        </button>
+
+        <!-- Result Feedback Banner -->
+        <div class="result-banner" id="result-banner">
+          <h4 id="result-title">ผลการทำรายการ</h4>
+          <p id="result-message">ข้อความผลลัพธ์</p>
+        </div>
+
+        <!-- Quick Hint Bar -->
+        <div style="margin-top: 1.25rem; padding-top: 0.85rem; border-top: 1px solid var(--border-default); font-size: 0.78rem; color: var(--text-muted); display: flex; align-items: center; justify-content: space-between;">
+          <span>เครื่องสแกนบาร์โค้ดจะส่งค่า Enter อัตโนมัติ</span>
+          <span id="scan-status-indicator" style="color: var(--green);">● พร้อมสแกน</span>
+        </div>
+
+      </div>
+    </div>
+
+    <!-- Right Column: Cabinet Status Only (No Logs on Kiosk) -->
+    <div class="kiosk-side-panel">
+
+      <!-- Devices currently assigned to this cabinet -->
+      <div class="panel-card">
+        <h3>
+          <span>📦 สถานะ PDA ในตู้นี้ (<span id="panel-dept-id">IB</span>)</span>
+          <span style="font-size: 0.8rem; font-weight: 500;" id="panel-counts-pill">
+            🟢 0 | 🔴 0
+          </span>
+        </h3>
+        <div class="locker-status-list" id="locker-device-list">
+          <!-- Populated by JS -->
+        </div>
+      </div>
+
+    </div>
+
+  </div>
+
+  <!-- Camera Scanner Modal -->
+  <div class="modal-overlay" id="camera-modal">
+    <div class="modal-card" style="max-width: 500px;">
+      <div class="modal-header">
+        <h3>📷 สแกนผ่านกล้อง</h3>
+        <button class="btn-icon" onclick="closeCameraScanner()">✕</button>
+      </div>
+      <div class="modal-body" style="text-align: center;">
+        <div id="camera-reader" style="width: 100%; min-height: 280px; border-radius: 8px; overflow: hidden; background: #000;"></div>
+        <p style="margin-top: 0.8rem; color: var(--text-muted); font-size: 0.85rem;">
+          หันกล้องไปที่ QR Code หรือบาร์โค้ดบนตัวเครื่อง PDA
+        </p>
+      </div>
+      <div class="modal-footer">
+        <button class="btn-secondary" onclick="closeCameraScanner()">ปิดกล้อง</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Camera Scanner library -->
+  <script src="/js/html5-qrcode.min.js"></script>
+  <!-- Sound synthesizer -->
+  <script src="/js/audio.js"></script>
+  <!-- Department Kiosk Logic -->
+  <script src="/js/dept.js"></script>
+</body>
+</html>

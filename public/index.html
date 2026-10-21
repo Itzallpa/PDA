@@ -1,0 +1,537 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>PDA Storage Center - แดชบอร์ดตู้จัดเก็บ PDA กลาง</title>
+  <link rel="stylesheet" href="/css/style.css">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>⚡</text></svg>">
+</head>
+<body class="admin-body">
+
+  <!-- ADMIN LOCK SCREEN (Displayed when not logged in) -->
+  <div id="admin-auth-screen" style="display: none; min-height: 100vh; background: #f8fafc; align-items: center; justify-content: center; padding: 1.5rem;">
+    <div style="background: #ffffff; border: 1px solid #e2e8f0; border-radius: 12px; box-shadow: 0 10px 25px -5px rgba(0,0,0,0.08), 0 8px 10px -6px rgba(0,0,0,0.04); width: 100%; max-width: 440px; padding: 2.2rem 2rem; text-align: center;">
+      <div style="width: 56px; height: 56px; background: #eff6ff; border-radius: 50%; display: flex; align-items: center; justify-content: center; margin: 0 auto 1.25rem; font-size: 1.8rem; color: #2563eb; border: 1px solid #bfdbfe;">
+        🔒
+      </div>
+      <h2 style="font-size: 1.35rem; font-weight: 700; color: #0f172a; margin-bottom: 0.35rem;">
+        เข้าสู่ระบบ Admin
+      </h2>
+      <p style="font-size: 0.85rem; color: #64748b; margin-bottom: 1.75rem; line-height: 1.4;">
+        หน้านี้เป็นระบบส่วนกลางสำหรับ Admin ผู้ดูแลระบบเท่านั้น กรุณากรอกรหัสผ่านเพื่อเข้าใช้งาน
+      </p>
+
+      <form id="admin-login-form" onsubmit="handleAdminLogin(event)" style="text-align: left;">
+        <div style="margin-bottom: 1.25rem;">
+          <label style="display: block; font-size: 0.85rem; font-weight: 600; color: #334155; margin-bottom: 0.4rem;">
+            รหัสผ่านผู้ดูแลระบบ (Admin Password)
+          </label>
+          <div style="position: relative;">
+            <input type="password" id="admin-password-input" placeholder="กรอกรหัสผ่าน Admin..." required style="width: 100%; padding: 0.65rem 0.85rem; font-size: 0.95rem; border: 1.5px solid #cbd5e1; border-radius: 6px; outline: none; box-sizing: border-box; transition: border-color 0.2s;" autofocus autocomplete="current-password">
+          </div>
+          <div id="login-error-msg" style="display: none; color: #dc2626; font-size: 0.82rem; margin-top: 0.4rem; font-weight: 500;">
+            ❌ รหัสผ่านไม่ถูกต้อง กรุณาลองใหม่อีกครั้ง
+          </div>
+        </div>
+
+        <button type="submit" id="btn-login-submit" class="btn-primary" style="width: 100%; padding: 0.75rem; font-size: 0.95rem; font-weight: 600; border-radius: 6px; justify-content: center; background: #0f172a; border-color: #0f172a; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1);">
+          🔑 ยืนยันเข้าสู่ระบบ
+        </button>
+      </form>
+
+      <!-- Department Kiosk Jump for Staff -->
+      <div style="margin-top: 2rem; padding-top: 1.5rem; border-top: 1px solid #e2e8f0; text-align: left;">
+        <div style="font-size: 0.8rem; font-weight: 600; color: #64748b; margin-bottom: 0.6rem; text-align: center;">
+          สำหรับพนักงานทั่วไป (คลิกไปหน้าตู้ประจำแผนก):
+        </div>
+        <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 0.5rem;" id="login-kiosk-links">
+          <!-- Populated dynamically based on departments in database -->
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ADMIN MAIN WRAPPER (Shown only when logged in as Admin) -->
+  <div id="admin-main-wrapper" style="display: none;">
+
+    <!-- Minimal Header -->
+    <header class="app-header">
+      <a href="/" class="logo-area">
+        <div class="logo-icon">P</div>
+        <div class="logo-text">
+          <h1>PDA Storage</h1>
+        </div>
+      </a>
+
+      <nav class="nav-links">
+        <a href="#matrix-view" class="nav-link active" onclick="switchMainTab('matrix')">ตู้จัดเก็บ</a>
+        <a href="#logs-view" class="nav-link" onclick="switchMainTab('logs')">ประวัติการเบิก-คืน</a>
+        <button class="btn-secondary" onclick="openAddDeptModal()" title="เพิ่มตู้จัดเก็บประจำแผนกใหม่">➕ เพิ่มตู้/แผนก</button>
+        <button class="btn-secondary" onclick="openImportModal()">นำเข้าไฟล์ SN</button>
+        <button class="nav-btn" onclick="openAddDeviceModal()">+ เพิ่ม PDA</button>
+        <button class="btn-secondary" onclick="openChangePasswordModal()" title="กำหนดรหัสผ่าน Admin ตามต้องการ">🔑 รหัสผ่าน</button>
+        <button class="btn-secondary" onclick="adminLogout()" title="ออกจากระบบ Admin">🚪 ล็อกเอาต์</button>
+      </nav>
+    </header>
+
+  <div class="container">
+
+    <!-- KPI Statistics Strip -->
+    <section class="stats-grid">
+      <div class="stat-card">
+        <div class="stat-info">
+          <span>PDA ทั้งหมด</span>
+          <h2 id="kpi-total">0</h2>
+        </div>
+      </div>
+
+      <div class="stat-card">
+        <div class="stat-info">
+          <span>ในตู้ชาร์จ</span>
+          <h2 id="kpi-in-cabinet" style="color: var(--green);">0</h2>
+        </div>
+      </div>
+
+      <div class="stat-card">
+        <div class="stat-info">
+          <span>เบิกไปใช้งาน</span>
+          <h2 id="kpi-checked-out" style="color: var(--red);">0</h2>
+        </div>
+      </div>
+
+      <div class="stat-card">
+        <div class="stat-info">
+          <span>ตู้จัดเก็บ</span>
+          <h2 id="kpi-depts">7 แผนก</h2>
+        </div>
+      </div>
+    </section>
+
+    <!-- Main View 1: Cabinets Matrix -->
+    <div id="section-matrix">
+      <!-- Department Filter Tabs -->
+      <div class="dept-tabs-wrapper" id="dept-filter-tabs">
+        <button class="dept-tab active" onclick="filterDepartment('ALL')">
+          <span>ทั้งหมด</span>
+          <span class="dept-badge-count" id="count-dept-all">0</span>
+        </button>
+        <!-- Dynamic department tabs populated via JS -->
+      </div>
+
+      <!-- Controls & Filter Bar -->
+      <div class="controls-bar">
+        <div class="search-box">
+          <span class="search-icon">🔍</span>
+          <input type="text" id="search-input" placeholder="ค้นหา Original SN, ad001, รหัสพนักงาน..." oninput="handleSearchInput()">
+        </div>
+
+        <div class="action-buttons">
+          <select id="status-filter" class="btn-secondary" onchange="handleStatusFilter(this.value)">
+            <option value="ALL">ทุกสถานะ</option>
+            <option value="IN_CABINET">ในตู้ชาร์จ</option>
+            <option value="CHECKED_OUT">เบิกใช้งาน</option>
+          </select>
+
+          <button class="btn-secondary" onclick="openBatchQrModal()">
+            พิมพ์สติ๊กเกอร์ QR
+          </button>
+
+          <button class="btn-secondary" onclick="refreshData()">
+            รีเฟรช
+          </button>
+        </div>
+      </div>
+
+      <!-- Quick Department Kiosks Launch Banner -->
+      <div style="display: flex; align-items: center; justify-content: space-between; gap: 0.75rem; margin-bottom: 1.5rem; padding: 0.65rem 0.85rem; border: 1px solid var(--border-default); border-radius: var(--radius); background: var(--bg-subtle); flex-wrap: wrap;">
+        <span style="font-size: 0.85rem; color: var(--text-secondary); font-weight: 500;">
+          หน้าตู้ประจำแผนก (Kiosks):
+        </span>
+        <div style="display: flex; gap: 0.35rem; flex-wrap: wrap;" id="quick-kiosk-links">
+          <!-- Quick links generated via JS -->
+        </div>
+      </div>
+
+      <!-- Cabinets Container -->
+      <div class="cabinets-container" id="cabinets-list">
+        <!-- Rendered via JS -->
+      </div>
+    </div>
+
+    <!-- Main View 2: Logs & Audit History -->
+    <div id="section-logs" style="display: none;">
+      <div class="controls-bar">
+        <div style="display: flex; gap: 0.8rem; flex: 1; flex-wrap: wrap;">
+          <div class="search-box" style="flex: 1; min-width: 250px;">
+            <span class="search-icon">🔍</span>
+            <input type="text" id="log-search-input" placeholder="ค้นหารหัสพนักงาน, PDA SN, หรือรหัสย่อ..." oninput="fetchLogs()">
+          </div>
+
+          <select id="log-dept-filter" class="btn-secondary" onchange="fetchLogs()">
+            <option value="ALL">ทุกแผนก</option>
+            <!-- Populated dynamically based on departments in database -->
+          </select>
+
+          <select id="log-action-filter" class="btn-secondary" onchange="fetchLogs()">
+            <option value="ALL">ทุกประเภทรายการ</option>
+            <option value="CHECK_OUT">📤 เบิกออก</option>
+            <option value="CHECK_IN">📥 คืนเข้าตู้</option>
+          </select>
+        </div>
+
+        <div class="action-buttons">
+          <button class="btn-primary" onclick="exportLogsCsv()">
+            <span>📥</span> ดาวน์โหลด Excel / CSV
+          </button>
+        </div>
+      </div>
+
+      <div class="table-responsive">
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th>#ID</th>
+              <th>วันที่ - เวลา</th>
+              <th>ตู้ / แผนก</th>
+              <th>การกระทำ</th>
+              <th>รหัสย่อ (Custom Code)</th>
+              <th>Original Serial Number</th>
+              <th>รหัสพนักงาน</th>
+              <th>สถานะล่าสุด</th>
+            </tr>
+          </thead>
+          <tbody id="logs-table-body">
+            <!-- Rendered via JS -->
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- MODAL: Add / Edit Device -->
+  <div class="modal-overlay" id="device-modal">
+    <div class="modal-card">
+      <div class="modal-header">
+        <h3 id="modal-device-title">เพิ่ม PDA เครื่องใหม่เข้าสู่ระบบ</h3>
+        <button class="btn-icon" onclick="closeModal('device-modal')">✕</button>
+      </div>
+      <div class="modal-body">
+        <input type="hidden" id="form-device-id">
+
+        <div class="form-group">
+          <label>Original Serial Number (SN เดิมจากโรงงาน) <span style="color: #f43f5e;">*</span></label>
+          <input type="text" id="form-orig-sn" placeholder="ตัวอย่าง: SN001 หรือ 202410291902" required>
+          <small style="color: var(--text-muted); font-size: 0.78rem;">พนักงานสามารถยิงบาร์โค้ด SN เดิมนี้เพื่อเบิก-คืนได้เช่นกัน</small>
+        </div>
+
+        <div class="form-group">
+          <label>รหัสย่อเฉพาะของเรา (Custom Alias QR Code) <span style="color: #f43f5e;">*</span></label>
+          <div class="input-with-action">
+            <input type="text" id="form-custom-sn" placeholder="ตัวอย่าง: ad001" required>
+            <button type="button" class="btn-secondary" onclick="autoSuggestCustomSn()" title="สร้างรหัสถัดไปอัตโนมัติ">
+              ⚡ รันเลขอัตโนมัติ
+            </button>
+          </div>
+          <small style="color: var(--text-muted); font-size: 0.78rem;">รหัสย่อสั้นๆ นี้จะถูกนำไปพิมพ์เป็นสติกเกอร์ QR Code ติดบนตัวเครื่อง</small>
+        </div>
+
+        <div class="form-group">
+          <label>แผนก / ตู้จัดเก็บที่อนุญาต (Cabinet Assignment) <span style="color: #f43f5e;">*</span></label>
+          <select id="form-department" required>
+            <!-- Populated dynamically based on departments in database -->
+          </select>
+          <small style="color: #f59e0b; font-size: 0.78rem;">⚠️ หากตั้งเป็นแผนกนี้ พนักงานจะไม่สามารถนำไปยิงที่ตู้แผนกอื่นได้!</small>
+        </div>
+
+        <div class="form-group">
+          <label>ยี่ห้อ / รุ่น (Model Name)</label>
+          <input type="text" id="form-model" placeholder="เช่น Zebra TC26, Honeywell EDA51">
+        </div>
+
+        <div class="form-group">
+          <label>หมายเหตุ (Notes)</label>
+          <textarea id="form-notes" rows="2" placeholder="ระบุข้อมูลเพิ่มเติม (ถ้ามี)"></textarea>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn-secondary" onclick="closeModal('device-modal')">ยกเลิก</button>
+        <button class="btn-primary" onclick="saveDevice()">💾 บันทึกข้อมูล</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL: Single QR Sticker Preview & Print -->
+  <div class="modal-overlay" id="qr-modal">
+    <div class="modal-card" style="max-width: 440px;">
+      <div class="modal-header">
+        <div>
+          <h3 style="margin: 0; font-size: 1rem;">🖨️ สติ๊กเกอร์ QR Code สำหรับติดตัวเครื่อง (1 ดวง)</h3>
+          <span style="font-size: 0.8rem; color: var(--text-muted);" id="single-modal-subtitle">รหัสย่อสำหรับติดตัวเครื่อง</span>
+        </div>
+        <button class="btn-icon" onclick="closeModal('qr-modal')">✕</button>
+      </div>
+      <div class="modal-body" style="text-align: center; padding: 1.5rem 1rem;">
+        <div class="sticker-preview-box" id="single-sticker-content" style="margin: 0 auto; max-width: 260px;">
+          <div class="sticker-header">
+            <span>PDA ASSET TAG</span>
+            <span class="sticker-dept-tag" id="sticker-dept-badge">IB</span>
+          </div>
+          <div class="sticker-qr-canvas" id="sticker-qr-container"></div>
+          <div class="sticker-custom-sn" id="sticker-custom-sn">ad001</div>
+          <div class="sticker-orig-sn">SN: <span id="sticker-orig-sn">SN001</span></div>
+        </div>
+        <p style="margin-top: 1rem; color: var(--text-secondary); font-size: 0.85rem;" class="no-print">
+          สแกนได้ทั้งรหัสย่อ <strong style="color: var(--text-primary);" id="sticker-help-custom">ad001</strong> หรือรหัสเครื่อง <strong style="color: var(--text-primary);" id="sticker-help-orig">SN001</strong>
+        </p>
+      </div>
+      <div class="modal-footer no-print">
+        <button class="btn-secondary" onclick="closeModal('qr-modal')">ปิด</button>
+        <button class="btn-primary" onclick="window.print()">🖨️ สั่งพิมพ์สติ๊กเกอร์ดวงนี้</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL: Batch & Single QR Sticker Sheet Printing -->
+  <div class="modal-overlay" id="batch-qr-modal">
+    <div class="modal-card" style="max-width: 960px;">
+      <div class="modal-header">
+        <div>
+          <h3 style="margin: 0; font-size: 1.05rem;">🖨️ พิมพ์สติ๊กเกอร์ QR Code ติดเครื่อง PDA</h3>
+          <p style="margin: 2px 0 0; font-size: 0.8rem; color: var(--text-muted);">
+            สามารถเลือกพิมพ์ทีละเครื่อง (Thermal Label 1 ดวง) หรือสั่งพิมพ์แผ่นรวม (A4 Sheet)
+          </p>
+        </div>
+        <button class="btn-icon" onclick="closeModal('batch-qr-modal')">✕</button>
+      </div>
+      <div class="modal-body">
+        <!-- Scanner Bar for Quick Scan to Print -->
+        <div class="sticker-scan-bar no-print" style="margin-bottom: 1rem; padding: 0.85rem 1rem; background: #f8fafc; border: 1.5px solid #cbd5e1; border-radius: var(--radius); display: flex; align-items: flex-start; gap: 0.75rem;">
+          <span style="font-size: 1.4rem; margin-top: 2px;">⚡</span>
+          <div style="flex: 1;">
+            <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 4px; flex-wrap: wrap; gap: 0.3rem;">
+              <span style="font-size: 0.83rem; font-weight: 700; color: var(--text-primary);">
+                ยิงสแกนบาร์โค้ด / Serial เพื่อสั่งพิมพ์สติ๊กเกอร์ดวงนี้ทันที:
+              </span>
+              <span style="font-size: 0.75rem; color: #dc2626; font-weight: 700; background: #fee2e2; border: 1px solid #fca5a5; padding: 0.15rem 0.55rem; border-radius: 4px;">
+                🔒 ล็อกยิงสแกนเท่านั้น (ห้ามพิมพ์ / ห้ามวาง)
+              </span>
+            </div>
+            <input type="text" id="sticker-quick-scan-input" placeholder="ใช้เครื่องยิงสแกนบาร์โค้ดเท่านั้น (ไม่อนุญาตให้พิมพ์ด้วยมือ หรือ Copy/Paste)..." style="width: 100%; padding: 0.55rem 0.75rem; border: 1.5px solid var(--border-default); border-radius: 4px; font-size: 0.9rem; outline: none; background: #ffffff;" autocomplete="off" onpaste="return false;" oncopy="return false;" oncut="return false;" oncontextmenu="return false;">
+            <div id="sticker-scan-warning" style="display: none; color: #dc2626; font-size: 0.82rem; font-weight: 600; margin-top: 0.4rem; background: #fef2f2; border: 1px solid #fecaca; padding: 0.35rem 0.6rem; border-radius: 4px;"></div>
+          </div>
+          <button type="button" class="btn-primary" onclick="handleStickerScanSubmit()" style="white-space: nowrap; padding: 0.55rem 1rem; margin-top: 1.25rem;">
+            🖨️ สั่งพิมพ์ดวงนี้
+          </button>
+        </div>
+
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.2rem; flex-wrap: wrap; gap: 0.8rem;" class="no-print">
+          <div style="display: flex; gap: 0.6rem; align-items: center; flex-wrap: wrap;">
+            <div style="display: flex; align-items: center; gap: 0.4rem;">
+              <label style="font-size: 0.85rem; font-weight: 500; color: var(--text-secondary);">แผนก:</label>
+              <select id="batch-dept-filter" class="btn-secondary" onchange="onBatchDeptChange()" style="background: #ffffff; color: var(--text-primary); border: 1px solid var(--border-default); padding: 0.4rem 0.6rem;">
+                <option value="ALL">ทุกแผนก (ทั้งหมด)</option>
+                <!-- Populated dynamically based on departments in database -->
+              </select>
+            </div>
+
+            <div style="display: flex; align-items: center; gap: 0.4rem;">
+              <label style="font-size: 0.85rem; font-weight: 500; color: var(--text-secondary);">เลือกพิมพ์เครื่อง:</label>
+              <select id="batch-device-filter" class="btn-secondary" onchange="renderBatchStickers()" style="background: #ffffff; color: var(--text-primary); border: 1px solid var(--border-default); padding: 0.4rem 0.6rem; max-width: 250px;">
+                <option value="ALL">📋 แสดงทุกเครื่อง</option>
+              </select>
+            </div>
+
+            <button type="button" class="btn-secondary" id="btn-reset-filter" onclick="resetStickerFilter()" style="display: none; padding: 0.4rem 0.6rem; font-size: 0.8rem;" title="กลับไปแสดงทุกเครื่อง">
+              ↩️ แสดงทั้งหมด
+            </button>
+          </div>
+
+          <div style="display: flex; gap: 0.5rem; align-items: center;">
+            <span id="batch-count-badge" style="font-size: 0.82rem; color: var(--text-muted); padding: 0.35rem 0.65rem; background: var(--bg-subtle); border-radius: 4px; border: 1px solid var(--border-subtle); font-weight: 600;">
+              0 เครื่อง
+            </span>
+            <button class="btn-primary" onclick="printStickersNow()" style="padding: 0.45rem 1rem;">
+              <span>🖨️</span> เริ่มการพิมพ์ (Print)
+            </button>
+          </div>
+        </div>
+
+        <div class="print-sheet-grid" id="batch-stickers-container" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 1rem;">
+          <!-- Populated by JS -->
+        </div>
+      </div>
+      <div class="modal-footer no-print">
+        <span style="font-size: 0.82rem; color: var(--text-muted); margin-right: auto;">
+          💡 ทิป: สามารถกด <strong>"🖨️ พิมพ์เฉพาะดวงนี้"</strong> ใต้แต่ละสติ๊กเกอร์ เพื่อสั่งพิมพ์เครื่องนั้นดวงเดียวได้ทันที
+        </span>
+        <button class="btn-secondary" onclick="closeModal('batch-qr-modal')">ปิดหน้าต่าง</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL: Batch Import PDA from Excel / CSV -->
+  <div class="modal-overlay" id="import-modal">
+    <div class="modal-card" style="max-width: 780px;">
+      <div class="modal-header">
+        <h3>📥 นำเข้าข้อมูล PDA จากไฟล์ (Excel / CSV)</h3>
+        <button class="btn-icon" onclick="closeModal('import-modal')">✕</button>
+      </div>
+      <div class="modal-body">
+        
+        <!-- Header Helpers -->
+        <div style="background: #f8fafc; border: 1px solid var(--border-color); border-radius: var(--radius-sm); padding: 1rem; margin-bottom: 1.25rem; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 0.8rem;">
+          <div>
+            <strong style="font-size: 0.9rem; color: var(--text-main);">ดาวน์โหลดไฟล์ตัวอย่าง (Template)</strong>
+            <p style="font-size: 0.8rem; color: var(--text-muted); margin-top: 0.2rem;">
+              มีคอลัมน์: Original SN, Custom Code (ถ้าเว้นว่างระบบจะรันเลขให้อัตโนมัติ), Department, Model, Notes
+            </p>
+          </div>
+          <div style="display: flex; gap: 0.5rem;">
+            <button type="button" class="btn-secondary" onclick="downloadImportTemplate('xlsx')">
+              <span>📊</span> โหลดตัวอย่าง .xlsx
+            </button>
+            <button type="button" class="btn-secondary" onclick="downloadImportTemplate('csv')">
+              <span>📄</span> โหลดตัวอย่าง .csv
+            </button>
+          </div>
+        </div>
+
+        <!-- File Upload Box -->
+        <div id="drop-zone" style="border: 2px dashed #cbd5e1; border-radius: var(--radius-md); padding: 2rem 1.5rem; text-align: center; background: #ffffff; cursor: pointer; transition: var(--transition);" onclick="document.getElementById('import-file-input').click()">
+          <input type="file" id="import-file-input" accept=".xlsx, .xls, .csv, .txt" style="display: none;" onchange="handleFileSelected(event)">
+          <div style="font-size: 2.2rem; color: #2563eb; margin-bottom: 0.5rem;">📂</div>
+          <div style="font-weight: 600; font-size: 1rem; color: var(--text-main);" id="drop-zone-text">
+            คลิกเพื่อเลือกไฟล์ หรือลากไฟล์มาวางที่นี่
+          </div>
+          <div style="font-size: 0.82rem; color: var(--text-muted); margin-top: 0.3rem;">
+            รองรับไฟล์ Microsoft Excel (.xlsx, .xls) หรือ CSV (.csv)
+          </div>
+        </div>
+
+        <!-- Fallback Department Selection -->
+        <div style="display: flex; align-items: center; justify-content: space-between; margin-top: 1.25rem; gap: 1rem; flex-wrap: wrap;">
+          <div style="display: flex; align-items: center; gap: 0.5rem;">
+            <label style="font-size: 0.85rem; font-weight: 600; color: var(--text-main);">แผนกเริ่มต้น (กรณีในไฟล์ไม่มีระบุแผนก):</label>
+            <select id="import-default-dept" class="btn-secondary" style="padding: 0.4rem 0.75rem;" onchange="recalculatePreview()">
+              <!-- Populated dynamically based on departments in database -->
+            </select>
+          </div>
+
+          <div id="import-summary-badge" style="display: none; font-size: 0.85rem; font-weight: 600; padding: 0.35rem 0.8rem; border-radius: var(--radius-full); background: #eff6ff; color: #1d4ed8; border: 1px solid #bfdbfe;">
+            ตรวจพบ 0 รายการ
+          </div>
+        </div>
+
+        <!-- Preview Table -->
+        <div id="import-preview-container" style="display: none; margin-top: 1rem;">
+          <h4 style="font-size: 0.95rem; font-weight: 700; color: var(--text-main); margin-bottom: 0.5rem;">
+            🔍 ตรวจสอบรายการที่จะนำเข้า (Preview):
+          </h4>
+          <div class="table-responsive" style="max-height: 260px; overflow-y: auto;">
+            <table class="data-table" style="font-size: 0.82rem;">
+              <thead>
+                <tr>
+                  <th>#</th>
+                  <th>Original SN</th>
+                  <th>รหัสย่อ (Custom QR)</th>
+                  <th>ตู้/แผนก</th>
+                  <th>รุ่น (Model)</th>
+                  <th>หมายเหตุ</th>
+                </tr>
+              </thead>
+              <tbody id="import-preview-body">
+                <!-- Populated via JS -->
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+      </div>
+      <div class="modal-footer">
+        <button class="btn-secondary" onclick="closeModal('import-modal')">ยกเลิก</button>
+        <button class="btn-primary" id="btn-confirm-import" onclick="executeBatchImport()" disabled style="opacity: 0.6;">
+          💾 ยืนยันนำเข้าข้อมูล (<span id="import-btn-count">0</span> เครื่อง)
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL: Add New Department / Cabinet -->
+  <div class="modal-overlay" id="dept-modal">
+    <div class="modal-card" style="max-width: 480px;">
+      <div class="modal-header">
+        <h3 style="margin: 0; font-size: 1.05rem;">🏢 เพิ่มตู้จัดเก็บ / แผนกใหม่ (Add Cabinet)</h3>
+        <button class="btn-icon" onclick="closeModal('dept-modal')">✕</button>
+      </div>
+      <form onsubmit="saveDepartment(event)">
+        <div class="modal-body">
+          <p style="font-size: 0.83rem; color: var(--text-muted); margin-bottom: 1.1rem; line-height: 1.45;">
+            สร้างตู้จัดเก็บประจำแผนกใหม่ ระบบจะสร้างหน้าตู้ Kiosk สำหรับสแกนเบิก-คืน (เช่น <code>/dept/รหัส</code>) ให้โดยอัตโนมัติ
+          </p>
+          <div class="form-group">
+            <label>รหัสย่อแผนก / ตู้ (Department Code) <span style="color: #f43f5e;">*</span></label>
+            <input type="text" id="form-dept-id" placeholder="เช่น OBD, QC, PKG, RTN" required maxlength="8" style="text-transform: uppercase;">
+            <small style="color: var(--text-muted); font-size: 0.75rem;">รหัสย่อนี้จะใช้เป็น URL หน้าตู้ เช่น /dept/OBD และแสดงบนสติ๊กเกอร์ QR</small>
+          </div>
+          <div class="form-group">
+            <label>ชื่อเต็มแผนก (Department Name) <span style="color: #f43f5e;">*</span></label>
+            <input type="text" id="form-dept-name" placeholder="เช่น Outbound Dispatch, คัดแยกสินค้า, QC ตรวจรับ" required>
+          </div>
+          <div class="form-group">
+            <label>คำอธิบาย / หน้าที่ของตู้ (Description)</label>
+            <input type="text" id="form-dept-desc" placeholder="เช่น จ่ายสินค้าออก, ตรวจสอบสินค้าชำรุด, ตู้ชั้น 2">
+          </div>
+          <div id="dept-form-error" style="display: none; color: #dc2626; font-size: 0.82rem; margin-top: 0.4rem; font-weight: 500;"></div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn-secondary" onclick="closeModal('dept-modal')">ยกเลิก</button>
+          <button type="submit" class="btn-primary" id="btn-save-dept-submit">💾 บันทึกตู้จัดเก็บใหม่</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- MODAL: Change Admin Password -->
+  <div class="modal-overlay" id="change-pwd-modal">
+    <div class="modal-card" style="max-width: 440px;">
+      <div class="modal-header">
+        <h3 style="margin: 0; font-size: 1rem;">🔑 กำหนดรหัสผ่าน Admin (Custom Password)</h3>
+        <button class="btn-icon" onclick="closeModal('change-pwd-modal')">✕</button>
+      </div>
+      <form onsubmit="handleSaveNewPassword(event)">
+        <div class="modal-body">
+          <p style="font-size: 0.84rem; color: var(--text-muted); margin-bottom: 1.1rem; line-height: 1.45;">
+            กำหนดรหัสผ่านสำหรับเข้าหน้า Admin Dashboard (ระบบจะบันทึกลงในไฟล์ <code>data/config.json</code> ให้อัตโนมัติ สามารถแก้ในไฟล์หรือในหน้านี้ได้ตลอดเวลา)
+          </p>
+          <div class="form-group">
+            <label>รหัสผ่านใหม่ (New Password) <span style="color: #f43f5e;">*</span></label>
+            <input type="password" id="input-new-admin-pwd" placeholder="ระบุรหัสผ่านใหม่ที่ต้องการ..." required minlength="1" autocomplete="new-password">
+          </div>
+          <div class="form-group">
+            <label>ยืนยันรหัสผ่านใหม่อีกครั้ง (Confirm Password) <span style="color: #f43f5e;">*</span></label>
+            <input type="password" id="input-confirm-admin-pwd" placeholder="กรอกรหัสผ่านใหม่อีกครั้งเพื่อยืนยัน..." required minlength="1" autocomplete="new-password">
+          </div>
+          <div id="pwd-change-error" style="display: none; color: #dc2626; font-size: 0.82rem; margin-top: 0.5rem; font-weight: 500;"></div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn-secondary" onclick="closeModal('change-pwd-modal')">ยกเลิก</button>
+          <button type="submit" class="btn-primary" id="btn-save-pwd-submit">💾 บันทึกรหัสผ่านใหม่</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  </div><!-- /admin-main-wrapper -->
+
+  <!-- SheetJS Excel Library -->
+  <script src="/js/xlsx.full.min.js"></script>
+  <!-- QR Code library -->
+  <script src="/js/qrcode.min.js"></script>
+  <!-- Sound synthesizer -->
+  <script src="/js/audio.js"></script>
+  <!-- Admin App Logic -->
+  <script src="/js/admin.js"></script>
+</body>
+</html>
