@@ -117,22 +117,6 @@
 
     <!-- Main View 1: Cabinets Matrix -->
     <div id="section-matrix">
-      <!-- Real-time Abnormal Alert Banner (Shown when abnormal scans exist) -->
-      <div id="abnormal-alert-banner" style="display: none; margin-bottom: 1.25rem; padding: 0.85rem 1.15rem; background: #fef2f2; border: 1px solid #fca5a5; border-radius: var(--radius); border-left: 5px solid #dc2626;">
-        <div style="display: flex; align-items: center; justify-content: space-between; gap: 1rem; flex-wrap: wrap;">
-          <div style="display: flex; align-items: center; gap: 0.65rem;">
-            <span style="font-size: 1.3rem;">🚨</span>
-            <div>
-              <strong style="color: #991b1b; font-size: 0.95rem;">ตรวจพบประวัติยิงผิดตู้ / ผิดปกติ (Abnormal Scans)</strong>
-              <div id="abnormal-alert-text" style="font-size: 0.82rem; color: #7f1d1d; margin-top: 0.15rem;"></div>
-            </div>
-          </div>
-          <button type="button" class="btn-secondary" onclick="filterLogByAction('Abnormal')" style="background: #fff; border-color: #fca5a5; color: #dc2626; font-weight: 700; font-size: 0.85rem; padding: 0.4rem 0.85rem; cursor: pointer;">
-            🔍 ตรวจสอบประวัติ Abnormal ทันที →
-          </button>
-        </div>
-      </div>
-
       <!-- Department Filter Tabs -->
       <div class="dept-tabs-wrapper" id="dept-filter-tabs">
         <button class="dept-tab active" onclick="filterDepartment('ALL')">
@@ -154,7 +138,6 @@
             <option value="ALL">ทุกสถานะ</option>
             <option value="IN_CABINET">ในตู้ชาร์จ</option>
             <option value="CHECKED_OUT">เบิกใช้งาน</option>
-            <option value="ABNORMAL_LOGS">⚠️ ดูเฉพาะประวัติผิดปกติ (Abnormal)</option>
           </select>
 
           <button class="btn-secondary" onclick="openBatchQrModal()">
@@ -183,8 +166,41 @@
       </div>
     </div>
 
-    <!-- Main View 2: Logs & Audit History -->
+    <!-- Main View 2: Logs & Audit History (หน้า Log) -->
     <div id="section-logs" style="display: none;">
+
+      <!-- Real-time Abnormal Alert Banner (แสดงบนหน้า Log) -->
+      <div id="abnormal-alert-banner" style="display: none; margin-bottom: 1.25rem; padding: 0.85rem 1.15rem; background: #fef2f2; border: 1.5px solid #fca5a5; border-radius: var(--radius); border-left: 5px solid #dc2626;">
+        <div style="display: flex; align-items: center; justify-content: space-between; gap: 1rem; flex-wrap: wrap;">
+          <div style="display: flex; align-items: center; gap: 0.65rem;">
+            <span style="font-size: 1.3rem;">🚨</span>
+            <div>
+              <strong style="color: #991b1b; font-size: 0.95rem;">ตรวจพบประวัติยิงผิดตู้ / รายการผิดปกติ (Abnormal Scans)</strong>
+              <div id="abnormal-alert-text" style="font-size: 0.82rem; color: #7f1d1d; margin-top: 0.15rem;"></div>
+            </div>
+          </div>
+          <button type="button" class="btn-secondary" onclick="selectLogTab('Abnormal')" style="background: #fff; border-color: #fca5a5; color: #dc2626; font-weight: 700; font-size: 0.85rem; padding: 0.4rem 0.85rem; cursor: pointer;">
+            🔍 กรองดูเฉพาะ Abnormal ทันที →
+          </button>
+        </div>
+      </div>
+
+      <!-- Quick Action Filter Tabs บนหน้า Log -->
+      <div style="display: flex; gap: 0.5rem; margin-bottom: 1.1rem; flex-wrap: wrap; align-items: center;">
+        <button type="button" class="btn-secondary log-filter-pill active" id="pill-log-all" onclick="selectLogTab('ALL')" style="font-weight: 600; padding: 0.45rem 1rem;">
+          📋 ทั้งหมด
+        </button>
+        <button type="button" class="btn-secondary log-filter-pill" id="pill-log-checkout" onclick="selectLogTab('CHECK_OUT')" style="font-weight: 600; padding: 0.45rem 1rem;">
+          📤 เบิกออก
+        </button>
+        <button type="button" class="btn-secondary log-filter-pill" id="pill-log-checkin" onclick="selectLogTab('CHECK_IN')" style="font-weight: 600; padding: 0.45rem 1rem;">
+          📥 คืนเข้าตู้
+        </button>
+        <button type="button" class="btn-secondary log-filter-pill" id="pill-log-abnormal" onclick="selectLogTab('Abnormal')" style="border-color: #fca5a5; color: #dc2626; font-weight: 700; padding: 0.45rem 1rem; background: #fff5f5;">
+          🚨 รายการผิดปกติ (Abnormal) <span id="log-pill-abnormal-badge" style="background: #dc2626; color: #fff; font-size: 0.72rem; padding: 0.1rem 0.5rem; border-radius: 9999px; margin-left: 0.35rem; font-weight: 800;">0</span>
+        </button>
+      </div>
+
       <div class="controls-bar">
         <div style="display: flex; gap: 0.8rem; flex: 1; flex-wrap: wrap;">
           <div class="search-box" style="flex: 1; min-width: 250px;">
@@ -197,7 +213,7 @@
             <!-- Populated dynamically based on departments in database -->
           </select>
 
-          <select id="log-action-filter" class="btn-secondary" onchange="fetchLogs()">
+          <select id="log-action-filter" class="btn-secondary" onchange="syncLogPillsWithSelect(); fetchLogs();" style="display: none;">
             <option value="ALL">ทุกประเภทรายการ</option>
             <option value="CHECK_OUT">📤 เบิกออก</option>
             <option value="CHECK_IN">📥 คืนเข้าตู้</option>
@@ -557,6 +573,6 @@
   <!-- Sound synthesizer -->
   <script src="/js/audio.js"></script>
   <!-- Admin App Logic -->
-  <script src="/js/admin.js?v=2.3.2"></script>
+  <script src="/js/admin.js?v=2.3.6"></script>
 </body>
 </html>

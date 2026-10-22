@@ -20,11 +20,9 @@ document.addEventListener('DOMContentLoaded', () => {
   initClock();
   setupScanInputListeners();
   loadCabinetData();
-  loadKioskRecentAbnormals();
 
-  // Auto-refresh cabinet list and recent abnormal logs every 4 seconds
+  // Auto-refresh cabinet list every 4 seconds
   setInterval(loadCabinetData, 4000);
-  setInterval(loadKioskRecentAbnormals, 4000);
 });
 
 function normalizeDeptCode(s) {
@@ -680,37 +678,20 @@ async function addSinglePdaToBatch(code) {
           staff_id: staffVal,
           notes: `ยิงเครื่องไม่พบในระบบ: สแกนรหัส "${cleanCode}" ที่ตู้ [${currentDeptId || 'UNKNOWN'}]`
         })
-      }).then(() => {
-        loadKioskRecentAbnormals();
       }).catch(err => console.error('Error logging abnormal scan:', err));
-
-      const unknownDev = {
-        id: 'unreg_' + Date.now(),
-        custom_sn: cleanCode,
-        original_sn: cleanCode,
-        department_id: 'UNKNOWN',
-        department_name: 'ไม่พบในระบบ',
-        isAbnormal: true,
-        abnormalReason: `ไม่พบอุปกรณ์รหัส "${cleanCode}" ในระบบฐานข้อมูล (กรุณาลงทะเบียนก่อน)`
-      };
-      addDeviceToQueueDirect(unknownDev);
-      renderBatchList();
 
       showFeedback('error', `
         <div style="display: inline-block; background: #dc2626; color: #fff; font-size: 0.82rem; font-weight: 800; padding: 0.25rem 0.75rem; border-radius: 9999px; margin-bottom: 0.6rem; letter-spacing: 0.05em; box-shadow: 0 2px 4px rgba(220,38,38,0.25);">
-          🚨 ABNORMAL (ไม่พบในระบบ / บันทึก Log แล้ว)
+          🚨 ไม่พบในระบบ (บันทึก Log Abnormal แล้ว)
         </div>
         <div style="font-size: 1.12rem; font-weight: 800; color: #dc2626; margin-bottom: 0.35rem;">
           ❌ ไม่พบอุปกรณ์รหัส "${cleanCode}" ในระบบฐานข้อมูล
         </div>
         <div style="font-size: 0.92rem; color: #7f1d1d; margin-bottom: 0.5rem; line-height: 1.45;">
-          ระบบแสดงเครื่องนี้ขึ้นในชุดพร้อมแถบแดง และบันทึกประวัติ Abnormal ไปยังส่วนกลางแล้ว
+          กรุณาตรวจสอบว่าลงทะเบียนเครื่องแล้วหรือยัง (ระบบบันทึกประวัติ Abnormal ลงหน้า Log เรียบร้อยแล้ว)
         </div>
-        <div style="font-size: 0.85rem; color: #991b1b; background: #fee2e2; border: 1px solid #fca5a5; padding: 0.45rem 0.75rem; border-radius: 6px; margin-bottom: 0.35rem;">
-          👉 กรุณากดปุ่ม <strong>[✕ นำออก]</strong> ที่เครื่องนี้ก่อนกดปุ่มยืนยัน
-        </div>
-      `, '⚠️ ไม่พบข้อมูลอุปกรณ์ (Abnormal)');
-      return true;
+      `, '⚠️ ไม่พบข้อมูลอุปกรณ์');
+      return false;
     }
 
     // If API returned a compound match of multiple devices (e.g. ad003ad004)
@@ -749,34 +730,26 @@ async function addSinglePdaToBatch(code) {
           staff_id: staffVal,
           notes: `ยิงผิดตู้: เครื่องสังกัดตู้ [${device.department_id} - ${devDeptName}] ถูกนำมายิงที่ตู้ [${currentDeptId}] (โหมด${modeLabel})`
         })
-      }).then(() => {
-        loadKioskRecentAbnormals();
       }).catch(err => console.error('Error logging abnormal scan:', err));
-
-      // Stage as Abnormal in batch list so it appears prominently on screen!
-      device.isAbnormal = true;
-      device.abnormalReason = `ยิงผิดตู้: เครื่องนี้สังกัดแผนก [${devDeptName}] ไม่ใช่ตู้ [${currentDeptId}]`;
-      addDeviceToQueueDirect(device);
-      renderBatchList();
 
       showFeedback('error', `
         <div style="display: inline-block; background: #dc2626; color: #fff; font-size: 0.82rem; font-weight: 800; padding: 0.25rem 0.75rem; border-radius: 9999px; margin-bottom: 0.6rem; letter-spacing: 0.05em; box-shadow: 0 2px 4px rgba(220,38,38,0.25);">
-          🚨 ABNORMAL (รายการผิดปกติ / บันทึก Log แล้ว)
+          🚨 ยิงผิดตู้ (บันทึก Log Abnormal แล้ว)
         </div>
         <div style="font-size: 1.12rem; font-weight: 800; color: #dc2626; margin-bottom: 0.35rem;">
           ❌ ยิงผิดตู้! อุปกรณ์ [${device.custom_sn || device.original_sn}] สังกัดตู้แผนก "${devDeptName}"
         </div>
         <div style="font-size: 0.92rem; color: #7f1d1d; margin-bottom: 0.5rem; line-height: 1.45;">
-          เครื่องนี้ไม่ได้ผูกไว้กับตู้ของแผนก <strong>[${currentDeptId}]</strong> (ระบบแสดงขึ้นในชุดพร้อมแถบแดง และบันทึก Log Abnormal แล้ว)
+          เครื่องนี้ไม่ได้ผูกไว้กับตู้ของแผนก <strong>[${currentDeptId}]</strong> ระบบไม่อนุญาตให้ทำรายการที่ตู้นี้
         </div>
         <div style="font-size: 0.85rem; color: #991b1b; background: #fee2e2; border: 1px solid #fca5a5; padding: 0.45rem 0.75rem; border-radius: 6px; margin-bottom: 0.35rem;">
-          👉 กรุณานำ PDA เครื่องนี้ไปสแกนทำรายการที่ <strong>หน้าตู้ประจำแผนก ${devDeptName}</strong> หรือกดปุ่ม <strong>[✕ นำออก]</strong>
+          👉 กรุณานำ PDA เครื่องนี้ไปสแกนทำรายการที่ <strong>หน้าตู้ประจำแผนก ${devDeptName}</strong>
         </div>
         <div style="font-size: 0.78rem; color: #6b7280;">
-          (บันทึก Log Action = <strong>Abnormal</strong> ไปยังระบบ Admin เรียบร้อยแล้ว)
+          (บันทึกเหตุการณ์ลงหน้า Log เรียบร้อยแล้ว)
         </div>
-      `, '⚠️ ตรวจพบรายการผิดปกติ (Abnormal)');
-      return true;
+      `, '⚠️ ยิงผิดตู้');
+      return false;
     }
 
     // Status Validations with Actionable Guidance
@@ -1091,35 +1064,6 @@ async function loadCabinetData() {
     }
   } catch (err) {
     console.warn('Error polling cabinet data:', err);
-  }
-}
-
-async function loadKioskRecentAbnormals() {
-  const container = document.getElementById('kiosk-recent-abnormals');
-  const badge = document.getElementById('kiosk-abnormal-badge');
-  if (!container) return;
-
-  try {
-    const res = await fetch(`/api/logs?action=Abnormal&department=${encodeURIComponent(currentDeptId)}&limit=5`);
-    const data = await res.json();
-    if (data.success && data.logs) {
-      if (badge) badge.textContent = data.total || data.logs.length;
-      if (data.logs.length === 0) {
-        container.innerHTML = `<div style="text-align: center; color: var(--text-muted); font-size: 0.8rem; padding: 0.6rem;">ยังไม่มีรายการผิดปกติ</div>`;
-        return;
-      }
-      container.innerHTML = data.logs.map(l => `
-        <div style="background: #fff; border-left: 3.5px solid #dc2626; border-radius: 6px; padding: 0.45rem 0.65rem; box-shadow: 0 1px 3px rgba(0,0,0,0.06); font-size: 0.78rem;">
-          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.2rem;">
-            <strong style="color: #dc2626; font-family: monospace; font-size: 0.85rem;">${l.custom_sn || l.original_sn}</strong>
-            <span style="color: #6b7280; font-size: 0.7rem; font-family: monospace;">${(l.timestamp || '').split(' ')[1] || l.timestamp}</span>
-          </div>
-          <div style="color: #7f1d1d; font-size: 0.75rem; line-height: 1.35; font-weight: 500;">${l.notes || 'ยิงผิดตู้'}</div>
-        </div>
-      `).join('');
-    }
-  } catch (err) {
-    console.warn('Error loading kiosk recent abnormals:', err);
   }
 }
 

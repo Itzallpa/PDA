@@ -499,6 +499,9 @@ async function fetchStats(isSilent = false) {
       const kpiAbnormal = document.getElementById('kpi-abnormal');
       if (kpiAbnormal) kpiAbnormal.textContent = abnormalCount;
 
+      const logTabBadge = document.getElementById('log-pill-abnormal-badge');
+      if (logTabBadge) logTabBadge.textContent = abnormalCount;
+
       const alertBanner = document.getElementById('abnormal-alert-banner');
       const alertText = document.getElementById('abnormal-alert-text');
       if (alertBanner && alertText) {
@@ -582,22 +585,51 @@ function filterDepartment(deptId) {
   applyFiltersAndRender();
 }
 
-function filterLogByAction(actionVal) {
-  switchMainTab('logs');
+function selectLogTab(actionVal) {
   const filter = document.getElementById('log-action-filter');
   if (filter) {
     filter.value = actionVal;
-    fetchLogs();
+  }
+  syncLogPillsWithSelect();
+  fetchLogs();
+}
+
+function syncLogPillsWithSelect() {
+  const filter = document.getElementById('log-action-filter');
+  const val = filter ? filter.value : 'ALL';
+
+  const pills = {
+    'ALL': document.getElementById('pill-log-all'),
+    'CHECK_OUT': document.getElementById('pill-log-checkout'),
+    'CHECK_IN': document.getElementById('pill-log-checkin'),
+    'Abnormal': document.getElementById('pill-log-abnormal')
+  };
+
+  Object.values(pills).forEach(p => {
+    if (p) {
+      p.classList.remove('active');
+      p.style.outline = '';
+      p.style.boxShadow = '';
+    }
+  });
+
+  const activePill = pills[val];
+  if (activePill) {
+    activePill.classList.add('active');
+    if (activePill.id === 'pill-log-abnormal') {
+      activePill.style.outline = '2px solid #dc2626';
+    } else {
+      activePill.style.outline = '2px solid #2563eb';
+    }
   }
 }
 
+function filterLogByAction(actionVal) {
+  switchMainTab('logs');
+  selectLogTab(actionVal);
+}
+
 function handleStatusFilter(val) {
-  if (val === 'ABNORMAL_LOGS') {
-    filterLogByAction('Abnormal');
-    const sel = document.getElementById('status-filter');
-    if (sel) sel.value = 'ALL';
-    return;
-  }
   currentStatusFilter = val;
   applyFiltersAndRender();
 }
@@ -1257,6 +1289,7 @@ function switchMainTab(tab) {
     matrixSec.style.display = 'none';
     logsSec.style.display = 'block';
     navLinks[1].classList.add('active');
+    syncLogPillsWithSelect();
     fetchLogs();
   }
 }
