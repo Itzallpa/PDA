@@ -71,9 +71,17 @@ def init_db():
             action TEXT NOT NULL,
             staff_id TEXT NOT NULL,
             timestamp TEXT DEFAULT (datetime('now', 'localtime')),
-            notes TEXT
+            notes TEXT,
+            owner_department_id TEXT
         );
     ''')
+
+    # Migration: Ensure owner_department_id exists
+    try:
+        cur.execute('ALTER TABLE logs ADD COLUMN owner_department_id TEXT')
+        conn.commit()
+    except Exception:
+        pass
 
     # Seed departments if empty
     cur.execute('SELECT COUNT(*) as count FROM departments')
@@ -842,15 +850,16 @@ def scan_device():
     dev_dept = device.get('department_id') or ''
     dev_dept_name = device.get('department_name') or dev_dept
     if department_id and dev_dept and not is_dept_compatible(dev_dept, department_id, dev_dept_name):
-        note_msg = f'ยิงผิดตู้: เครื่องสังกัดแผนก {dev_dept} ({dev_dept_name}) ถูกนำมายิงที่ตู้ {department_id}'
+        note_msg = f'ยิงผิดตู้: เครื่องสังกัดแผนก [{dev_dept} - {dev_dept_name}] ถูกนำมายิงที่ตู้ [{department_id}]'
         cur.execute('''
-            INSERT INTO logs (device_id, original_sn, custom_sn, department_id, action, staff_id, timestamp, notes)
-            VALUES (?, ?, ?, ?, 'Abnormal', ?, datetime('now', 'localtime'), ?)
+            INSERT INTO logs (device_id, original_sn, custom_sn, department_id, owner_department_id, action, staff_id, timestamp, notes)
+            VALUES (?, ?, ?, ?, ?, 'Abnormal', ?, datetime('now', 'localtime'), ?)
         ''', (
             device.get('id'),
             device.get('original_sn') or code,
             device.get('custom_sn') or code,
             department_id,
+            dev_dept,
             staff_id or 'UNKNOWN',
             note_msg
         ))
@@ -859,6 +868,9 @@ def scan_device():
         return jsonify({
             'success': False,
             'errorType': 'DEPARTMENT_MISMATCH',
+            'owner_department_id': dev_dept,
+            'owner_department_name': dev_dept_name,
+            'scanned_department_id': department_id,
             'message': f'❌ อุปกรณ์ [{device["custom_sn"]}] สังกัดตู้แผนก "{dev_dept_name}" ไม่สามารถทำรายการที่ตู้ "{department_id}" ได้ (เครื่องไม่ได้อยู่ในตู้นี้)'
         }), 400
 
@@ -994,15 +1006,16 @@ def scan_batch():
 
             # Department validation: device MUST belong to this cabinet's department!
             if department_id and dev_dept and not is_dept_compatible(dev_dept, department_id, dev_dept_name):
-                note_msg = f'ยิงผิดตู้: เครื่องสังกัดแผนก {dev_dept} ({dev_dept_name}) ถูกนำมายิงที่ตู้ {department_id}'
+                note_msg = f'ยิงผิดตู้: เครื่องสังกัดแผนก [{dev_dept} - {dev_dept_name}] ถูกนำมายิงที่ตู้ [{department_id}]'
                 cur.execute('''
-                    INSERT INTO logs (device_id, original_sn, custom_sn, department_id, action, staff_id, timestamp, notes)
-                    VALUES (?, ?, ?, ?, 'Abnormal', ?, datetime('now', 'localtime'), ?)
+                    INSERT INTO logs (device_id, original_sn, custom_sn, department_id, owner_department_id, action, staff_id, timestamp, notes)
+                    VALUES (?, ?, ?, ?, ?, 'Abnormal', ?, datetime('now', 'localtime'), ?)
                 ''', (
                     device.get('id'),
                     device.get('original_sn') or code,
                     device.get('custom_sn') or code,
                     department_id,
+                    dev_dept,
                     staff_id or 'UNKNOWN',
                     note_msg
                 ))
@@ -1089,6 +1102,7 @@ def record_abnormal_log():
     original_sn = (data.get('original_sn') or '').strip()
     custom_sn = (data.get('custom_sn') or '').strip()
     department_id = (data.get('department_id') or '').strip().upper() or 'UNKNOWN'
+    owner_dept = (data.get('owner_department_id') or '').strip().upper()
     staff_id = (data.get('staff_id') or '').strip() or 'UNKNOWN'
     notes = (data.get('notes') or '').strip()
 
@@ -1102,10 +1116,17 @@ def record_abnormal_log():
 
     db = get_db()
     cur = db.cursor()
+
+    if not owner_dept and (device_id or original_sn or custom_sn):
+        cur.execute('SELECT department_id FROM devices WHERE id = ? OR original_sn = ? COLLATE NOCASE OR custom_sn = ? COLLATE NOCASE', (device_id or 0, original_sn, custom_sn))
+        dev_row = cur.fetchone()
+        if dev_row:
+            owner_dept = dev_row['department_id']
+
     cur.execute('''
-        INSERT INTO logs (device_id, original_sn, custom_sn, department_id, action, staff_id, timestamp, notes)
-        VALUES (?, ?, ?, ?, 'Abnormal', ?, datetime('now', 'localtime'), ?)
-    ''', (device_id, original_sn, custom_sn, department_id, staff_id, notes))
+        INSERT INTO logs (device_id, original_sn, custom_sn, department_id, owner_department_id, action, staff_id, timestamp, notes)
+        VALUES (?, ?, ?, ?, ?, 'Abnormal', ?, datetime('now', 'localtime'), ?)
+    ''', (device_id, original_sn, custom_sn, department_id, owner_dept or None, staff_id, notes))
     db.commit()
     log_id = cur.lastrowid
     db.close()
@@ -1114,6 +1135,7 @@ def record_abnormal_log():
         'success': True,
         'log_id': log_id,
         'action': 'Abnormal',
+        'owner_department_id': owner_dept or None,
         'message': 'บันทึกประวัติ Abnormal สำเร็จ'
     })
 
@@ -1126,16 +1148,17 @@ def get_logs():
     offset = int(request.args.get('offset', 0))
 
     query = '''
-        SELECT l.*, d.name as department_name
+        SELECT l.*, d.name as department_name, d_owner.name as owner_department_name
         FROM logs l
         LEFT JOIN departments d ON l.department_id = d.id
+        LEFT JOIN departments d_owner ON l.owner_department_id = d_owner.id
         WHERE 1=1
     '''
     params = []
 
     if department and department != 'ALL':
-        query += ' AND l.department_id = ?'
-        params.append(department)
+        query += ' AND (l.department_id = ? OR l.owner_department_id = ?)'
+        params.extend([department, department])
 
     if action and action != 'ALL':
         query += ' AND UPPER(l.action) = UPPER(?)'
@@ -1143,10 +1166,28 @@ def get_logs():
 
     if search and search.strip():
         s = f"%{search.strip()}%"
-        query += ' AND (l.original_sn LIKE ? OR l.custom_sn LIKE ? OR l.staff_id LIKE ? OR l.notes LIKE ?)'
-        params.extend([s, s, s, s])
+        query += ' AND (l.original_sn LIKE ? OR l.custom_sn LIKE ? OR l.staff_id LIKE ? OR l.notes LIKE ? OR l.owner_department_id LIKE ? OR d_owner.name LIKE ?)'
+        params.extend([s, s, s, s, s, s])
 
-    count_query = query.replace('SELECT l.*, d.name as department_name', 'SELECT COUNT(*) as count')
+    count_query = '''
+        SELECT COUNT(*) as count 
+        FROM logs l 
+        LEFT JOIN departments d_owner ON l.owner_department_id = d_owner.id
+        WHERE 1=1
+    '''
+    count_params = []
+    if department and department != 'ALL':
+        count_query += ' AND (l.department_id = ? OR l.owner_department_id = ?)'
+        count_params.extend([department, department])
+
+    if action and action != 'ALL':
+        count_query += ' AND UPPER(l.action) = UPPER(?)'
+        count_params.append(action)
+
+    if search and search.strip():
+        s = f"%{search.strip()}%"
+        count_query += ' AND (l.original_sn LIKE ? OR l.custom_sn LIKE ? OR l.staff_id LIKE ? OR l.notes LIKE ? OR l.owner_department_id LIKE ? OR d_owner.name LIKE ?)'
+        count_params.extend([s, s, s, s, s, s])
     query += ' ORDER BY l.id DESC LIMIT ? OFFSET ?'
 
     db = get_db()
@@ -1205,7 +1246,7 @@ def export_logs():
     output = io.StringIO()
     output.write('\ufeff')  # UTF-8 BOM for Excel
     writer = csv.writer(output)
-    writer.writerow(['ID', 'Timestamp', 'Action', 'Custom SN', 'Original SN', 'Department ID', 'Department Name', 'Staff ID', 'Notes'])
+    writer.writerow(['ID', 'Timestamp', 'Action', 'Custom SN', 'Original SN', 'Scanned Department (ตู้ที่สแกน)', 'Scanned Department Name', 'Owner Department (ตู้เจ้าของจริง)', 'Owner Department Name', 'Staff ID', 'Notes'])
 
     for r in rows:
         act = (r['action'] or '').strip()
@@ -1226,6 +1267,8 @@ def export_logs():
             r['original_sn'],
             r['department_id'],
             r['department_name'] or r['department_id'],
+            r['owner_department_id'] or '',
+            r['owner_department_name'] or r['owner_department_id'] or '',
             r['staff_id'],
             r['notes'] or ''
         ])

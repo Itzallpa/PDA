@@ -58,12 +58,18 @@ db.exec(`
     original_sn TEXT NOT NULL,
     custom_sn TEXT NOT NULL,
     department_id TEXT NOT NULL,
-    action TEXT NOT NULL, -- 'CHECK_OUT' | 'CHECK_IN'
+    owner_department_id TEXT,
+    action TEXT NOT NULL, -- 'CHECK_OUT' | 'CHECK_IN' | 'Abnormal'
     staff_id TEXT NOT NULL,
     timestamp TEXT DEFAULT (datetime('now', 'localtime')),
     notes TEXT
   );
 `);
+
+// Migration: Ensure owner_department_id column exists
+try {
+  db.exec('ALTER TABLE logs ADD COLUMN owner_department_id TEXT');
+} catch (e) {}
 
 // Pre-populate departments if empty
 const deptCount = db.prepare('SELECT COUNT(*) as count FROM departments').get().count;
@@ -806,15 +812,16 @@ app.post('/api/scan', (req, res) => {
     const devDept = device.department_id || '';
     const devDeptName = device.department_name || devDept;
     if (department_id && devDept && !isDepartmentCompatible(devDept, department_id, devDeptName)) {
-      const noteMsg = `ยิงผิดตู้: เครื่องสังกัดแผนก ${devDept} (${devDeptName}) ถูกนำมายิงที่ตู้ ${department_id}`;
+      const noteMsg = `ยิงผิดตู้: เครื่องสังกัดแผนก [${devDept} - ${devDeptName}] ถูกนำมายิงที่ตู้ [${department_id}]`;
       db.prepare(`
-        INSERT INTO logs (device_id, original_sn, custom_sn, department_id, action, staff_id, timestamp, notes)
-        VALUES (?, ?, ?, ?, 'Abnormal', ?, datetime('now', 'localtime'), ?)
+        INSERT INTO logs (device_id, original_sn, custom_sn, department_id, owner_department_id, action, staff_id, timestamp, notes)
+        VALUES (?, ?, ?, ?, ?, 'Abnormal', ?, datetime('now', 'localtime'), ?)
       `).run(
         device.id || null,
         device.original_sn || code,
         device.custom_sn || code,
         department_id,
+        devDept,
         staff_id || 'UNKNOWN',
         noteMsg
       );
@@ -822,6 +829,9 @@ app.post('/api/scan', (req, res) => {
       return res.status(400).json({
         success: false,
         errorType: 'DEPARTMENT_MISMATCH',
+        owner_department_id: devDept,
+        owner_department_name: devDeptName,
+        scanned_department_id: department_id,
         message: `❌ อุปกรณ์ [${device.custom_sn}] สังกัดตู้แผนก "${devDeptName}" ไม่สามารถทำรายการที่ตู้ "${department_id}" ได้ (เครื่องไม่ได้อยู่ในตู้นี้)`
       });
     }
@@ -1022,7 +1032,7 @@ app.post('/api/scan/batch', (req, res) => {
         const devDept = device.department_id || '';
         const devDeptName = device.department_name || devDept;
         if (department_id && devDept && !isDepartmentCompatible(devDept, department_id, devDeptName)) {
-          const noteMsg = `ยิงผิดตู้: เครื่องสังกัดแผนก ${devDept} (${devDeptName}) ถูกนำมายิงที่ตู้ ${department_id}`;
+          const noteMsg = `ยิงผิดตู้: เครื่องสังกัดแผนก [${devDept} - ${devDeptName}] ถูกนำมายิงที่ตู้ [${department_id}]`;
           insertLogStmt.run(
             device.id || null,
             device.original_sn || code,
@@ -1031,8 +1041,8 @@ app.post('/api/scan/batch', (req, res) => {
             'Abnormal',
             staff_id || 'UNKNOWN'
           );
-          // Update the notes for this last inserted log
-          db.prepare('UPDATE logs SET notes = ? WHERE id = last_insert_rowid()').run(noteMsg);
+          // Update the notes and owner_department_id for this last inserted log
+          db.prepare('UPDATE logs SET notes = ?, owner_department_id = ? WHERE id = last_insert_rowid()').run(noteMsg, devDept);
 
           errors.push({
             code,
@@ -1100,10 +1110,11 @@ app.post('/api/scan/batch', (req, res) => {
 // 7.2 Record Abnormal Log Endpoint
 app.post('/api/logs/abnormal', (req, res) => {
   try {
-    let { device_id, original_sn, custom_sn, department_id, staff_id, notes, code } = req.body || {};
+    let { device_id, original_sn, custom_sn, department_id, staff_id, notes, code, owner_department_id } = req.body || {};
     original_sn = (original_sn || '').toString().trim();
     custom_sn = (custom_sn || '').toString().trim();
     department_id = (department_id || 'UNKNOWN').toString().trim().toUpperCase();
+    owner_department_id = (owner_department_id || '').toString().trim().toUpperCase();
     staff_id = (staff_id || 'UNKNOWN').toString().trim();
     notes = (notes || 'บันทึกรายการผิดปกติ (Abnormal)').toString().trim();
 
@@ -1112,16 +1123,28 @@ app.post('/api/logs/abnormal', (req, res) => {
       custom_sn = (code || 'UNKNOWN').toString().trim();
     }
 
+    // Auto-resolve owner_department_id from devices if not passed
+    if (!owner_department_id && (device_id || original_sn || custom_sn)) {
+      const devRow = db.prepare(`
+        SELECT department_id FROM devices 
+        WHERE id = ? OR original_sn = ? COLLATE NOCASE OR custom_sn = ? COLLATE NOCASE
+      `).get(device_id || 0, original_sn, custom_sn);
+      if (devRow) {
+        owner_department_id = devRow.department_id;
+      }
+    }
+
     const insert = db.prepare(`
-      INSERT INTO logs (device_id, original_sn, custom_sn, department_id, action, staff_id, timestamp, notes)
-      VALUES (?, ?, ?, ?, 'Abnormal', ?, datetime('now', 'localtime'), ?)
+      INSERT INTO logs (device_id, original_sn, custom_sn, department_id, owner_department_id, action, staff_id, timestamp, notes)
+      VALUES (?, ?, ?, ?, ?, 'Abnormal', ?, datetime('now', 'localtime'), ?)
     `);
-    const result = insert.run(device_id || null, original_sn, custom_sn, department_id, staff_id, notes);
+    const result = insert.run(device_id || null, original_sn, custom_sn, department_id, owner_department_id || null, staff_id, notes);
 
     res.json({
       success: true,
       log_id: result.lastInsertRowid,
       action: 'Abnormal',
+      owner_department_id: owner_department_id || null,
       message: 'บันทึกประวัติ Abnormal สำเร็จ'
     });
   } catch (err) {
@@ -1135,25 +1158,26 @@ app.get('/api/logs', (req, res) => {
   try {
     const { department, action, search, limit = 50, offset = 0 } = req.query;
     let query = `
-      SELECT l.*, d.name as department_name
+      SELECT l.*, d.name as department_name, d_owner.name as owner_department_name
       FROM logs l
       LEFT JOIN departments d ON l.department_id = d.id
+      LEFT JOIN departments d_owner ON l.owner_department_id = d_owner.id
       WHERE 1=1
     `;
     const params = [];
 
     if (department && department !== 'ALL') {
-      query += ' AND l.department_id = ?';
-      params.push(department);
+      query += ' AND (l.department_id = ? OR l.owner_department_id = ?)';
+      params.push(department, department);
     }
     if (action && action !== 'ALL') {
       query += ' AND UPPER(l.action) = UPPER(?)';
       params.push(action);
     }
     if (search && search.trim() !== '') {
-      query += ' AND (l.original_sn LIKE ? OR l.custom_sn LIKE ? OR l.staff_id LIKE ? OR l.notes LIKE ?)';
+      query += ' AND (l.original_sn LIKE ? OR l.custom_sn LIKE ? OR l.staff_id LIKE ? OR l.notes LIKE ? OR l.owner_department_id LIKE ? OR d_owner.name LIKE ?)';
       const s = `%${search.trim()}%`;
-      params.push(s, s, s, s);
+      params.push(s, s, s, s, s, s);
     }
 
     query += ' ORDER BY l.id DESC LIMIT ? OFFSET ?';
@@ -1162,20 +1186,25 @@ app.get('/api/logs', (req, res) => {
     const logs = db.prepare(query).all(...params);
 
     // Get total count for pagination
-    let countQuery = 'SELECT COUNT(*) as total FROM logs l WHERE 1=1';
+    let countQuery = `
+      SELECT COUNT(*) as total 
+      FROM logs l 
+      LEFT JOIN departments d_owner ON l.owner_department_id = d_owner.id
+      WHERE 1=1
+    `;
     const countParams = [];
     if (department && department !== 'ALL') {
-      countQuery += ' AND l.department_id = ?';
-      countParams.push(department);
+      countQuery += ' AND (l.department_id = ? OR l.owner_department_id = ?)';
+      countParams.push(department, department);
     }
     if (action && action !== 'ALL') {
       countQuery += ' AND UPPER(l.action) = UPPER(?)';
       countParams.push(action);
     }
     if (search && search.trim() !== '') {
-      countQuery += ' AND (l.original_sn LIKE ? OR l.custom_sn LIKE ? OR l.staff_id LIKE ? OR l.notes LIKE ?)';
+      countQuery += ' AND (l.original_sn LIKE ? OR l.custom_sn LIKE ? OR l.staff_id LIKE ? OR l.notes LIKE ? OR l.owner_department_id LIKE ? OR d_owner.name LIKE ?)';
       const s = `%${search.trim()}%`;
-      countParams.push(s, s, s, s);
+      countParams.push(s, s, s, s, s, s);
     }
     const totalCount = db.prepare(countQuery).get(...countParams).total;
 
@@ -1215,7 +1244,7 @@ app.get('/api/logs/export', (req, res) => {
     const rows = db.prepare(query).all(...params);
 
     // Format CSV
-    const headers = ['Log ID', 'วันที่-เวลา', 'รหัสแผนก', 'ชื่อแผนก', 'การกระทำ', 'รหัสย่อ (Custom QR)', 'Original Serial Number', 'รหัสพนักงาน', 'หมายเหตุ'];
+    const headers = ['Log ID', 'วันที่-เวลา', 'ตู้ที่ถูกยิง (สแกนที่ตู้)', 'ชื่อตู้ที่ยิง', 'ตู้เจ้าของเครื่องจริง (Owner Dept)', 'ชื่อตู้เจ้าของ', 'การกระทำ', 'รหัสย่อ (Custom QR)', 'Original Serial Number', 'รหัสพนักงาน', 'หมายเหตุ'];
     const csvLines = [headers.join(',')];
 
     for (const r of rows) {
@@ -1229,6 +1258,8 @@ app.get('/api/logs/export', (req, res) => {
         `"${r.timestamp || ''}"`,
         `"${r.department_id || ''}"`,
         `"${r.department_name || ''}"`,
+        `"${r.owner_department_id || ''}"`,
+        `"${r.owner_department_name || ''}"`,
         `"${actionThai}"`,
         `"${r.custom_sn || ''}"`,
         `"${r.original_sn || ''}"`,

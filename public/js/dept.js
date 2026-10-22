@@ -710,8 +710,9 @@ async function addSinglePdaToBatch(code) {
             original_sn: device.original_sn,
             custom_sn: device.custom_sn,
             department_id: currentDeptId,
+            owner_department_id: device.department_id,
             staff_id: staffVal,
-            notes: `ยิงผิดตู้: เครื่องสังกัดตู้ [${device.department_id} - ${devDeptName}] ถูกนำมายิงที่ตู้ [${currentDeptId}] (โหมด${modeLabel})`
+            notes: `ยิงผิดตู้: เครื่องสังกัดแผนก [${device.department_id} - ${devDeptName}] ถูกนำมายิงที่ตู้ [${currentDeptId}] (โหมด${modeLabel})`
           })
         });
         localStorage.setItem('pda_abnormal_updated', Date.now().toString());

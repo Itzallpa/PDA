@@ -1360,11 +1360,44 @@ function renderLogsTable(logs) {
 
     let statusContent = '';
     if (isAbnormal) {
-      statusContent = `<div style="color: #dc2626; font-size: 0.82rem; font-weight: 600; line-height: 1.35;">⚠️ ${l.notes || 'ยิงผิดตู้ / ผิดพลาด'}</div>`;
+      let mismatchBadge = '';
+      if (l.owner_department_id && l.owner_department_id !== l.department_id) {
+        const ownerName = l.owner_department_name ? ` (${l.owner_department_name})` : '';
+        const deptName = l.department_name ? ` (${l.department_name})` : '';
+        mismatchBadge = `
+          <div style="margin-top: 0.35rem; display: inline-flex; align-items: center; gap: 0.35rem; background: #fee2e2; border: 1px solid #fca5a5; padding: 0.25rem 0.55rem; border-radius: 6px; font-size: 0.76rem; font-weight: 700; color: #991b1b; flex-wrap: wrap;">
+            <span>🏢 เครื่องสังกัด: <strong>${l.owner_department_id}</strong>${ownerName}</span>
+            <span>➡️</span>
+            <span>🚨 ถูกนำมายิงที่: <strong>${l.department_id}</strong>${deptName}</span>
+          </div>
+        `;
+      }
+      statusContent = `
+        <div style="color: #dc2626; font-size: 0.82rem; font-weight: 600; line-height: 1.35;">
+          ⚠️ ${l.notes || 'ยิงผิดตู้ / ผิดพลาด'}
+          ${mismatchBadge}
+        </div>
+      `;
     } else if (isOut) {
       statusContent = `<span style="color: var(--color-red-text); font-weight: 600;">กำลังใช้งาน</span>`;
     } else {
       statusContent = `<span style="color: var(--color-green-text); font-weight: 600;">อยู่ในตู้</span>`;
+    }
+
+    let deptCol = `<td><strong style="color: #1d4ed8;">${l.department_id}</strong> <span style="color: var(--text-muted);">(${l.department_name || ''})</span></td>`;
+    if (isAbnormal && l.owner_department_id && l.owner_department_id !== l.department_id) {
+      deptCol = `
+        <td>
+          <div style="display: flex; flex-direction: column; gap: 0.2rem;">
+            <div style="font-size: 0.78rem; color: #b91c1c; font-weight: 700;">
+              🚨 สแกนที่ตู้: <strong style="color: #dc2626; font-size: 0.88rem;">${l.department_id}</strong>
+            </div>
+            <div style="font-size: 0.78rem; color: #1e40af; font-weight: 700;">
+              🏢 เครื่องของตู้: <strong style="color: #2563eb; font-size: 0.88rem;">${l.owner_department_id}</strong>
+            </div>
+          </div>
+        </td>
+      `;
     }
 
     const rowBg = isAbnormal ? 'style="background: rgba(254, 242, 242, 0.4);"' : '';
@@ -1373,7 +1406,7 @@ function renderLogsTable(logs) {
       <tr ${rowBg}>
         <td style="font-family: 'JetBrains Mono', monospace; color: var(--text-muted); font-size: 0.8rem;">#${l.id}</td>
         <td style="font-family: 'JetBrains Mono', monospace; font-size: 0.85rem; color: var(--text-body);">${l.timestamp}</td>
-        <td><strong style="color: #1d4ed8;">${l.department_id}</strong> <span style="color: var(--text-muted);">(${l.department_name || ''})</span></td>
+        ${deptCol}
         <td>${actionBadge}</td>
         <td><strong style="font-family: 'JetBrains Mono', monospace; color: var(--text-main); font-size: 0.95rem;">${l.custom_sn}</strong></td>
         <td style="font-family: 'JetBrains Mono', monospace; color: var(--text-muted);">${l.original_sn}</td>
