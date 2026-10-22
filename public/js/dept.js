@@ -187,95 +187,248 @@ function focusPrimaryInput() {
 
 let autoAddTimeout = null;
 
+/**
+ * Locks an input element so it can ONLY receive input from a hardware barcode scanner.
+ * - Blocks paste, drop, cut, contextmenu
+ * - Blocks manual keyboard typing (preventDefault on single keys, buffer in memory)
+ * - Verifies inter-keystroke intervals (< 55ms average, < 85ms max)
+ * - If user types slowly with keyboard or presses Backspace/Delete, displays warning and plays error sound
+ * - Supports scanners terminating with Enter or Tab
+ * - Also supports fast barcode bursts without Enter suffix via an inactivity check
+ */
+function bindScanOnlyField(inputElem, options = {}) {
+  if (!inputElem) return;
+
+  const warningDiv = options.warningDivId ? document.getElementById(options.warningDivId) : null;
+  const onValidScan = options.onValidScan;
+  const fieldLabel = options.fieldName || 'ช่องนี้';
+
+  let scanBuffer = '';
+  let keyTimestamps = [];
+  let burstTimer = null;
+  let warnTimer = null;
+
+  function flashWarning(msg) {
+    if (window.soundManager && typeof window.soundManager.playError === 'function') {
+      window.soundManager.playError();
+    }
+
+    if (warningDiv) {
+      warningDiv.textContent = msg;
+      warningDiv.style.display = 'block';
+      clearTimeout(warnTimer);
+      warnTimer = setTimeout(() => {
+        warningDiv.style.display = 'none';
+      }, 3500);
+    }
+
+    inputElem.style.borderColor = '#dc2626';
+    inputElem.style.boxShadow = '0 0 0 3px rgba(220, 38, 38, 0.25)';
+    setTimeout(() => {
+      inputElem.style.borderColor = '';
+      inputElem.style.boxShadow = '';
+    }, 1200);
+  }
+
+  // 1. Block Paste, Drop, Cut, ContextMenu
+  ['paste', 'drop'].forEach(evt => {
+    inputElem.addEventListener(evt, (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      scanBuffer = '';
+      keyTimestamps = [];
+      flashWarning(`🚫 ไม่อนุญาตให้ Copy / Paste (${fieldLabel}) — กรุณาใช้เครื่องยิงสแกนบาร์โค้ดเท่านั้น!`);
+    });
+  });
+
+  ['cut', 'contextmenu'].forEach(evt => {
+    inputElem.addEventListener(evt, (e) => {
+      e.preventDefault();
+    });
+  });
+
+  // 2. Prevent mobile on-screen keyboard from popping up on touchscreens/PDAs
+  inputElem.setAttribute('inputmode', 'none');
+  inputElem.setAttribute('autocomplete', 'off');
+  inputElem.setAttribute('autocorrect', 'off');
+  inputElem.setAttribute('autocapitalize', 'off');
+  inputElem.setAttribute('spellcheck', 'false');
+
+  // 3. Intercept Keydown to block human typing while allowing rapid scanner bursts
+  inputElem.addEventListener('keydown', (e) => {
+    // Intercept Ctrl/Cmd paste shortcuts (Ctrl+V, Shift+Insert)
+    if ((e.ctrlKey || e.metaKey) && (e.key === 'v' || e.key === 'V' || e.key === 'Insert')) {
+      e.preventDefault();
+      scanBuffer = '';
+      keyTimestamps = [];
+      flashWarning(`🚫 ไม่อนุญาตให้กดวางข้อความ (Ctrl+V) — กรุณาใช้เครื่องยิงสแกนเท่านั้น!`);
+      return;
+    }
+
+    // Ignore modifier keys
+    if (['Shift', 'Control', 'Alt', 'Meta', 'CapsLock'].includes(e.key)) {
+      return;
+    }
+
+    // Block Backspace / Delete
+    if (e.key === 'Backspace' || e.key === 'Delete') {
+      e.preventDefault();
+      scanBuffer = '';
+      keyTimestamps = [];
+      flashWarning(`🚫 ไม่อนุญาตให้พิมพ์หรือแก้ไขด้วยมือ (${fieldLabel}) — กรุณาใช้เครื่องยิงสแกนบาร์โค้ดเท่านั้น!`);
+      return;
+    }
+
+    const now = performance.now();
+
+    // Check for Scanner Terminating Key: Enter or Tab
+    if (e.key === 'Enter' || e.key === 'Tab') {
+      e.preventDefault();
+      clearTimeout(burstTimer);
+
+      const val = scanBuffer.trim();
+      const count = keyTimestamps.length;
+
+      if (!val) {
+        scanBuffer = '';
+        keyTimestamps = [];
+        return;
+      }
+
+      // Scanner check: must have at least 2 characters and fast burst speed
+      if (count < 2) {
+        scanBuffer = '';
+        keyTimestamps = [];
+        flashWarning(`🚫 ไม่อนุญาตให้พิมพ์ด้วยคีย์บอร์ด — ระบบล็อกให้ใช้เครื่องยิงสแกนบาร์โค้ดเท่านั้น!`);
+        return;
+      }
+
+      let totalInterval = 0;
+      let maxInterval = 0;
+      for (let i = 1; i < count; i++) {
+        const diff = keyTimestamps[i] - keyTimestamps[i - 1];
+        totalInterval += diff;
+        if (diff > maxInterval) maxInterval = diff;
+      }
+      const avgInterval = totalInterval / (count - 1);
+
+      // Barcode scanners send keys at avg < 50ms and max < 85ms
+      if (avgInterval > 55 || maxInterval > 85) {
+        scanBuffer = '';
+        keyTimestamps = [];
+        flashWarning(`🚫 ตรวจพบการพิมพ์ด้วยมือ — ระบบอนุญาตเฉพาะการยิงสแกนบาร์โค้ดเท่านั้น!`);
+        return;
+      }
+
+      // Valid barcode scan!
+      const scannedVal = val;
+      scanBuffer = '';
+      keyTimestamps = [];
+      if (warningDiv) warningDiv.style.display = 'none';
+
+      if (typeof onValidScan === 'function') {
+        onValidScan(scannedVal);
+      }
+      return;
+    }
+
+    // Printable single character (scanner or keyboard)
+    if (e.key.length === 1) {
+      // Prevent character from directly appearing in DOM input field
+      e.preventDefault();
+
+      if (keyTimestamps.length > 0) {
+        const lastTime = keyTimestamps[keyTimestamps.length - 1];
+        const diff = now - lastTime;
+
+        // If gap between keys > 60ms, a human is typing with fingers
+        if (diff > 60) {
+          scanBuffer = '';
+          keyTimestamps = [];
+          clearTimeout(burstTimer);
+          flashWarning(`🚫 ไม่อนุญาตให้พิมพ์ด้วยมือ — ระบบล็อกให้ใช้เครื่องยิงสแกนบาร์โค้ดเท่านั้น!`);
+          return;
+        }
+      }
+
+      scanBuffer += e.key;
+      keyTimestamps.push(now);
+
+      // Inactivity timeout:
+      // If no next key arrives within 65ms:
+      // Check if it was a valid fast scanner burst without an Enter suffix (>= 3 chars, fast avg)
+      clearTimeout(burstTimer);
+      burstTimer = setTimeout(() => {
+        const len = scanBuffer.length;
+        if (len >= 3) {
+          let tot = 0;
+          let mx = 0;
+          for (let i = 1; i < keyTimestamps.length; i++) {
+            const d = keyTimestamps[i] - keyTimestamps[i - 1];
+            tot += d;
+            if (d > mx) mx = d;
+          }
+          const avg = tot / (keyTimestamps.length - 1);
+          if (avg <= 45 && mx <= 80) {
+            // Valid barcode scan without Enter suffix!
+            const scannedVal = scanBuffer.trim();
+            scanBuffer = '';
+            keyTimestamps = [];
+            if (warningDiv) warningDiv.style.display = 'none';
+            if (typeof onValidScan === 'function') {
+              onValidScan(scannedVal);
+            }
+            return;
+          }
+        }
+
+        // Slow key or single character from human typing
+        scanBuffer = '';
+        keyTimestamps = [];
+        flashWarning(`🚫 ไม่อนุญาตให้พิมพ์ด้วยมือ (${fieldLabel}) — กรุณาใช้เครื่องยิงสแกนบาร์โค้ดเท่านั้น!`);
+      }, 65);
+    }
+  });
+}
+
 function setupScanInputListeners() {
   const staffInput = document.getElementById('input-staff-id');
   const pdaInput = document.getElementById('input-pda-code');
   const btnClearStaff = document.getElementById('btn-clear-staff');
 
-  // When staff barcode / ID is scanned or entered (Enter or Tab)
-  staffInput.addEventListener('keydown', (e) => {
-    if (e.key === 'Enter' || e.key === 'Tab') {
-      e.preventDefault();
-      const val = staffInput.value.trim();
-      if (val) {
-        if (window.soundManager) window.soundManager.playBeep();
-        if (btnClearStaff) btnClearStaff.style.display = 'inline';
-        
-        // If PDA devices are already staged in batch queue, confirm/submit immediately!
-        if (currentBatchDevices.length > 0) {
-          submitBatchOrSingle();
-        } else {
-          pdaInput.focus();
-          pdaInput.select();
-        }
+  // 1. Staff ID Scan-Only Field
+  bindScanOnlyField(staffInput, {
+    warningDivId: 'warn-staff-id',
+    fieldName: 'รหัสพนักงาน',
+    onValidScan: (scannedVal) => {
+      const cleanVal = (scannedVal || '').trim();
+      if (!cleanVal) return;
+
+      staffInput.value = cleanVal;
+      if (window.soundManager) window.soundManager.playBeep();
+      if (btnClearStaff) btnClearStaff.style.display = 'inline';
+
+      // If PDA devices are already staged in batch queue, confirm/submit immediately!
+      if (currentBatchDevices.length > 0) {
+        submitBatchOrSingle();
+      } else {
+        pdaInput.focus();
+        pdaInput.select();
       }
     }
   });
 
-  staffInput.addEventListener('input', () => {
-    if (btnClearStaff) {
-      btnClearStaff.style.display = staffInput.value.trim() ? 'inline' : 'none';
-    }
-  });
-
-  // When PDA barcode / QR is scanned or entered (Enter or Tab)
-  pdaInput.addEventListener('keydown', (e) => {
-    if (e.key === 'Enter' || e.key === 'Tab') {
-      e.preventDefault();
-      clearTimeout(autoAddTimeout);
-      const val = pdaInput.value.trim();
-
-      if (!val) {
-        if (currentBatchDevices.length > 0) {
-          submitBatchOrSingle();
-        }
-        return;
-      }
+  // 2. PDA Code Scan-Only Field (Continuous batch scanning)
+  bindScanOnlyField(pdaInput, {
+    warningDivId: 'warn-pda-code',
+    fieldName: 'รหัส PDA',
+    onValidScan: (scannedVal) => {
+      const cleanVal = (scannedVal || '').trim();
+      if (!cleanVal) return;
 
       pdaInput.value = '';
-      processInputCodes(val);
+      processInputCodes(cleanVal);
     }
-  });
-
-  // Auto-detect compound scan (e.g. 'ad003ad004') or auto-match on barcode input
-  pdaInput.addEventListener('input', () => {
-    clearTimeout(autoAddTimeout);
-    const val = pdaInput.value.trim();
-    if (!val) return;
-
-    // 1. If input contains multiple codes (e.g. ad003ad004 or space-separated)
-    const parsed = parseCodes(val);
-    if (parsed.length > 1) {
-      pdaInput.value = '';
-      processInputCodes(val);
-      return;
-    }
-
-    // 2. If scanner does not emit Enter suffix: auto-add when it matches a known device in this cabinet
-    if (currentCabinetDevices && currentCabinetDevices.length > 0) {
-      const match = currentCabinetDevices.find(
-        d => d.custom_sn.toLowerCase() === val.toLowerCase() || d.original_sn.toLowerCase() === val.toLowerCase()
-      );
-      if (match) {
-        autoAddTimeout = setTimeout(() => {
-          if (pdaInput.value.trim().toLowerCase() === val.toLowerCase()) {
-            pdaInput.value = '';
-            processInputCodes(val);
-          }
-        }, 220);
-      }
-    }
-  });
-
-  // Paste support
-  pdaInput.addEventListener('paste', () => {
-    setTimeout(() => {
-      const val = pdaInput.value.trim();
-      if (val) {
-        pdaInput.value = '';
-        processInputCodes(val);
-      }
-    }, 20);
   });
 }
 
@@ -287,6 +440,7 @@ function handleAddPdaButtonClick() {
     pdaInput.value = '';
     processInputCodes(val);
   } else {
+    showFeedback('info', 'ℹ️ กรุณาใช้เครื่องยิงสแกนบาร์โค้ด PDA เพื่อเพิ่มเข้าชุด (ระบบล็อกห้ามพิมพ์ด้วยมือ)');
     pdaInput.focus();
   }
 }

@@ -243,9 +243,9 @@ function setupScanOnlyProtection(inputElem, warningDivId, onValidScanSubmit) {
   if (!inputElem) return;
 
   const warningDiv = warningDivId ? document.getElementById(warningDivId) : null;
+  let scanBuffer = '';
   let keyTimestamps = [];
-  let isHumanTyping = false;
-  let resetTimer = null;
+  let burstTimer = null;
   let hideWarnTimer = null;
 
   function flashWarning(msg) {
@@ -276,9 +276,8 @@ function setupScanOnlyProtection(inputElem, warningDivId, onValidScanSubmit) {
     inputElem.addEventListener(evtName, (e) => {
       e.preventDefault();
       e.stopPropagation();
-      inputElem.value = '';
+      scanBuffer = '';
       keyTimestamps = [];
-      isHumanTyping = false;
       flashWarning('🚫 ไม่อนุญาตให้ Copy / Paste หรือวางข้อความ — กรุณาใช้เครื่องยิงสแกนบาร์โค้ดเท่านั้น!');
     });
   });
@@ -290,25 +289,33 @@ function setupScanOnlyProtection(inputElem, warningDivId, onValidScanSubmit) {
     });
   });
 
-  // 3. Intercept Keydown to block human typing
+  // Prevent mobile soft keyboard popup
+  inputElem.setAttribute('inputmode', 'none');
+  inputElem.setAttribute('autocomplete', 'off');
+  inputElem.setAttribute('autocorrect', 'off');
+  inputElem.setAttribute('autocapitalize', 'off');
+  inputElem.setAttribute('spellcheck', 'false');
+
+  // 3. Intercept Keydown to block human typing while allowing rapid scanner bursts
   inputElem.addEventListener('keydown', (e) => {
     // Intercept Ctrl+V / Cmd+V / Shift+Insert
     if ((e.ctrlKey || e.metaKey) && (e.key === 'v' || e.key === 'V' || e.key === 'Insert')) {
       e.preventDefault();
-      inputElem.value = '';
+      scanBuffer = '';
+      keyTimestamps = [];
       flashWarning('🚫 ไม่อนุญาตให้กดวางข้อความ (Ctrl+V) — กรุณาใช้เครื่องยิงสแกนเท่านั้น!');
       return;
     }
 
     // Ignore non-character modifier keys
-    if (['Shift', 'Control', 'Alt', 'Meta', 'CapsLock', 'Tab'].includes(e.key)) {
+    if (['Shift', 'Control', 'Alt', 'Meta', 'CapsLock'].includes(e.key)) {
       return;
     }
 
     // Block Backspace / Delete (humans use backspace, scanners do not)
     if (e.key === 'Backspace' || e.key === 'Delete') {
       e.preventDefault();
-      inputElem.value = '';
+      scanBuffer = '';
       keyTimestamps = [];
       flashWarning('🚫 ไม่อนุญาตให้แก้ไขด้วยมือ — กรุณาใช้เครื่องยิงสแกนบาร์โค้ดเท่านั้น!');
       return;
@@ -317,75 +324,102 @@ function setupScanOnlyProtection(inputElem, warningDivId, onValidScanSubmit) {
     const now = performance.now();
 
     // When Enter is pressed (scanner suffix)
-    if (e.key === 'Enter') {
+    if (e.key === 'Enter' || e.key === 'Tab') {
       e.preventDefault();
-      clearTimeout(resetTimer);
-      const val = inputElem.value.trim();
+      clearTimeout(burstTimer);
+      const val = scanBuffer.trim();
+      const count = keyTimestamps.length;
 
       if (!val) {
+        scanBuffer = '';
         keyTimestamps = [];
-        isHumanTyping = false;
         return;
       }
 
       // Scanner check: must have multiple keys and fast burst speed
-      if (isHumanTyping || keyTimestamps.length < 2) {
-        inputElem.value = '';
+      if (count < 2) {
+        scanBuffer = '';
         keyTimestamps = [];
-        isHumanTyping = false;
         flashWarning('🚫 ไม่อนุญาตให้พิมพ์ด้วยคีย์บอร์ด — ระบบล็อกให้ใช้เครื่องยิงสแกนบาร์โค้ดเท่านั้น!');
         return;
       }
 
       let total = 0;
       let maxInt = 0;
-      for (let i = 1; i < keyTimestamps.length; i++) {
+      for (let i = 1; i < count; i++) {
         const diff = keyTimestamps[i] - keyTimestamps[i - 1];
         total += diff;
         if (diff > maxInt) maxInt = diff;
       }
-      const avg = total / (keyTimestamps.length - 1);
+      const avg = total / (count - 1);
 
-      if (avg > 50 || maxInt > 85) {
-        inputElem.value = '';
+      if (avg > 55 || maxInt > 85) {
+        scanBuffer = '';
         keyTimestamps = [];
-        isHumanTyping = false;
         flashWarning('🚫 ตรวจพบการพิมพ์ด้วยมือ — ระบบอนุญาตเฉพาะการยิงสแกนบาร์โค้ดเท่านั้น!');
         return;
       }
 
       // Valid barcode scan!
+      const scannedVal = val;
+      scanBuffer = '';
       keyTimestamps = [];
-      isHumanTyping = false;
       if (warningDiv) warningDiv.style.display = 'none';
       if (typeof onValidScanSubmit === 'function') {
-        onValidScanSubmit(val);
+        onValidScanSubmit(scannedVal);
       }
       return;
     }
 
     // Printable character keydown
     if (e.key.length === 1) {
+      // Prevent key from appearing in DOM
+      e.preventDefault();
+
       if (keyTimestamps.length > 0) {
         const diff = now - keyTimestamps[keyTimestamps.length - 1];
-        // If slow typing detected between keys (> 50ms)
-        if (diff > 50) {
-          isHumanTyping = true;
-          e.preventDefault();
-          inputElem.value = '';
+        // If slow typing detected between keys (> 60ms)
+        if (diff > 60) {
+          scanBuffer = '';
           keyTimestamps = [];
+          clearTimeout(burstTimer);
           flashWarning('🚫 ไม่อนุญาตให้พิมพ์ด้วยมือ — ระบบล็อกให้ใช้เครื่องยิงสแกนบาร์โค้ดเท่านั้น!');
           return;
         }
       }
 
+      scanBuffer += e.key;
       keyTimestamps.push(now);
 
-      clearTimeout(resetTimer);
-      resetTimer = setTimeout(() => {
+      clearTimeout(burstTimer);
+      burstTimer = setTimeout(() => {
+        const len = scanBuffer.length;
+        if (len >= 3) {
+          let tot = 0;
+          let mx = 0;
+          for (let i = 1; i < keyTimestamps.length; i++) {
+            const d = keyTimestamps[i] - keyTimestamps[i - 1];
+            tot += d;
+            if (d > mx) mx = d;
+          }
+          const avg = tot / (keyTimestamps.length - 1);
+          if (avg <= 45 && mx <= 80) {
+            // Valid barcode scan without Enter suffix!
+            const scannedVal = scanBuffer.trim();
+            scanBuffer = '';
+            keyTimestamps = [];
+            if (warningDiv) warningDiv.style.display = 'none';
+            if (typeof onValidScanSubmit === 'function') {
+              onValidScanSubmit(scannedVal);
+            }
+            return;
+          }
+        }
+
+        scanBuffer = '';
         keyTimestamps = [];
-        isHumanTyping = false;
-      }, 300);
+        flashWarning('🚫 ไม่อนุญาตให้พิมพ์ด้วยมือ — ระบบล็อกให้ใช้เครื่องยิงสแกนบาร์โค้ดเท่านั้น!');
+      }, 65);
     }
   });
 }
@@ -1022,7 +1056,11 @@ function openBatchQrModal(deptId = null, devCustomSn = null) {
 function handleStickerScanSubmit(directCode = null) {
   const scanInput = document.getElementById('sticker-quick-scan-input');
   const rawCode = (directCode || (scanInput ? scanInput.value : '')).trim();
-  if (!rawCode) return;
+  if (!rawCode) {
+    alert('ℹ️ กรุณาใช้เครื่องยิงสแกนบาร์โค้ด PDA เพื่อสั่งพิมพ์ดวงนี้ (ระบบล็อกห้ามพิมพ์ด้วยมือ)');
+    if (scanInput) scanInput.focus();
+    return;
+  }
 
   // Search case-insensitively in allDevices (matching custom_sn OR original_sn)
   const targetDev = allDevices.find(

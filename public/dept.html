@@ -61,35 +61,46 @@
     <div>
       <div class="scanner-card" id="scanner-box">
         
-        <!-- Step 1: Staff ID (Shown for Check-Out or Optional for Check-In) -->
+        <!-- Step 1: Staff ID (Scan-Only with Barcode/Badge) -->
         <div class="scan-input-group" id="group-staff-id">
           <div class="scan-input-label">
-            <span>1. รหัสพนักงาน (Staff ID) <span class="req" id="req-staff-mark">*</span></span>
+            <div style="display: flex; align-items: center; gap: 0.4rem; flex-wrap: wrap;">
+              <span>1. รหัสพนักงาน (Staff ID) <span class="req" id="req-staff-mark">*</span></span>
+              <span style="font-size: 0.72rem; color: #dc2626; font-weight: 700; background: #fee2e2; border: 1px solid #fca5a5; padding: 0.12rem 0.45rem; border-radius: 4px;">🔒 สแกนเท่านั้น</span>
+            </div>
             <button type="button" id="btn-clear-staff" onclick="clearStaffId()" style="display: none; background: transparent; border: none; color: var(--blue); font-size: 0.78rem; cursor: pointer; text-decoration: underline;">
               เปลี่ยนพนักงาน
             </button>
           </div>
           <div class="scan-input-wrapper">
-            <input type="text" id="input-staff-id" placeholder="ยิงบัตรพนักงาน หรือพิมพ์รหัส..." autocomplete="off" autofocus>
+            <input type="text" id="input-staff-id" placeholder="🔒 ยิงสแกนบัตรพนักงานเท่านั้น (ระบบล็อกห้ามพิมพ์ด้วยมือ)..." autocomplete="off" inputmode="none" autocorrect="off" autocapitalize="off" spellcheck="false" autofocus>
           </div>
+          <div id="warn-staff-id" style="display: none; color: #dc2626; font-size: 0.8rem; font-weight: 600; margin-top: 0.35rem; background: #fef2f2; border: 1px solid #fecaca; padding: 0.35rem 0.65rem; border-radius: 4px;"></div>
         </div>
 
-        <!-- Step 2: PDA Barcode / QR Code Input -->
+        <!-- Step 2: PDA Barcode / QR Code Input (Scan-Only) -->
         <div class="scan-input-group">
           <div class="scan-input-label">
-            <span>2. รหัส PDA (ยิงเพิ่มเข้าชุดได้หลายเครื่อง) <span class="req">*</span></span>
+            <div style="display: flex; align-items: center; gap: 0.4rem; flex-wrap: wrap;">
+              <span>2. รหัส PDA (ยิงเพิ่มเข้าชุดได้หลายเครื่อง) <span class="req">*</span></span>
+              <span style="font-size: 0.72rem; color: #dc2626; font-weight: 700; background: #fee2e2; border: 1px solid #fca5a5; padding: 0.12rem 0.45rem; border-radius: 4px;">🔒 สแกนเท่านั้น</span>
+            </div>
             <span id="batch-counter-badge" style="display: none; font-size: 0.78rem; font-weight: 600; padding: 0.1rem 0.45rem; border-radius: 4px; background: var(--blue-subtle); color: var(--blue);">
               ในชุด: <strong id="batch-count-val">0</strong> เครื่อง
             </span>
           </div>
           <div class="scan-input-wrapper" style="display: flex; gap: 0.5rem;">
-            <input type="text" id="input-pda-code" placeholder="ยิงสแกนบาร์โค้ด หรือพิมพ์รหัส PDA..." autocomplete="off" style="flex: 1;">
-            <button type="button" class="btn-secondary" id="btn-add-pda" onclick="handleAddPdaButtonClick()" style="padding: 0 1rem; font-weight: 600; white-space: nowrap; font-size: 0.88rem;">
+            <input type="text" id="input-pda-code" placeholder="🔒 ยิงสแกนบาร์โค้ด / QR เท่านั้น (ระบบล็อกห้ามพิมพ์ด้วยมือ)..." autocomplete="off" inputmode="none" autocorrect="off" autocapitalize="off" spellcheck="false" style="flex: 1;">
+            <button type="button" class="btn-secondary" id="btn-add-pda" onclick="handleAddPdaButtonClick()" style="padding: 0 1rem; font-weight: 600; white-space: nowrap; font-size: 0.88rem;" title="สแกนบาร์โค้ดเพื่อเพิ่มเข้าชุด">
               + เพิ่มเข้าชุด
             </button>
           </div>
+          <div id="warn-pda-code" style="display: none; color: #dc2626; font-size: 0.8rem; font-weight: 600; margin-top: 0.35rem; background: #fef2f2; border: 1px solid #fecaca; padding: 0.35rem 0.65rem; border-radius: 4px;"></div>
           <div style="font-size: 0.76rem; color: var(--text-muted); margin-top: 0.35rem;">
             💡 รองรับทั้งรหัสย่อ (Custom Code เช่น OB01) และรหัสโรงงาน (Original SN เช่น MT9055...) สามารถยิงต่อเนื่องได้ทันที
+          </div>
+          <div style="font-size: 0.75rem; color: #b91c1c; font-weight: 600; margin-top: 0.25rem; display: flex; align-items: center; gap: 0.35rem;">
+            <span>🔒</span> <span>ล็อกให้ใช้เครื่องยิงสแกนเท่านั้น (ไม่อนุญาตให้พิมพ์ด้วยคีย์บอร์ดหรือคัดลอกวางข้อความ)</span>
           </div>
         </div>
 
@@ -177,6 +188,6 @@
   <!-- Sound synthesizer -->
   <script src="/js/audio.js"></script>
   <!-- Department Kiosk Logic -->
-  <script src="/js/dept.js?v=2.2.0"></script>
+  <script src="/js/dept.js?v=2.3.0"></script>
 </body>
 </html>
