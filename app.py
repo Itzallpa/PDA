@@ -384,6 +384,18 @@ def get_stats():
     cur.execute("SELECT COUNT(*) as count FROM devices WHERE status = 'CHECKED_OUT'")
     checked_out = cur.fetchone()['count']
 
+    cur.execute("SELECT COUNT(*) as count FROM logs WHERE LOWER(action) = 'abnormal'")
+    abnormal_count = cur.fetchone()['count']
+
+    cur.execute('''
+        SELECT l.*, d.name as department_name
+        FROM logs l
+        LEFT JOIN departments d ON l.department_id = d.id
+        WHERE LOWER(l.action) = 'abnormal'
+        ORDER BY l.id DESC LIMIT 5
+    ''')
+    recent_abnormals = [dict(r) for r in cur.fetchall()]
+
     cur.execute('''
         SELECT 
             d.id, d.name, d.description,
@@ -404,6 +416,8 @@ def get_stats():
             'total': total_devices,
             'inCabinet': in_cabinet,
             'checkedOut': checked_out,
+            'abnormalCount': abnormal_count,
+            'recentAbnormals': recent_abnormals,
             'departments': dept_stats
         }
     })

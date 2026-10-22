@@ -291,6 +291,15 @@ app.get('/api/stats', (req, res) => {
     const totalDevices = db.prepare('SELECT COUNT(*) as count FROM devices').get().count;
     const inCabinet = db.prepare("SELECT COUNT(*) as count FROM devices WHERE status = 'IN_CABINET'").get().count;
     const checkedOut = db.prepare("SELECT COUNT(*) as count FROM devices WHERE status = 'CHECKED_OUT'").get().count;
+    const abnormalCount = db.prepare("SELECT COUNT(*) as count FROM logs WHERE LOWER(action) = 'abnormal'").get().count;
+
+    const recentAbnormals = db.prepare(`
+      SELECT l.*, d.name as department_name
+      FROM logs l
+      LEFT JOIN departments d ON l.department_id = d.id
+      WHERE LOWER(l.action) = 'abnormal'
+      ORDER BY l.id DESC LIMIT 5
+    `).all();
 
     const deptStats = db.prepare(`
       SELECT 
@@ -312,6 +321,8 @@ app.get('/api/stats', (req, res) => {
         total: totalDevices,
         inCabinet,
         checkedOut,
+        abnormalCount,
+        recentAbnormals,
         departments: deptStats
       }
     });

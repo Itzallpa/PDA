@@ -106,10 +106,33 @@
           <h2 id="kpi-depts">7 แผนก</h2>
         </div>
       </div>
+
+      <div class="stat-card" id="kpi-card-abnormal" style="border-left: 4px solid #dc2626; cursor: pointer;" onclick="filterLogByAction('Abnormal')" title="คลิกเพื่อดูรายการผิดปกติ (Abnormal) ทั้งหมด">
+        <div class="stat-info">
+          <span>⚠️ รายการผิดปกติ</span>
+          <h2 id="kpi-abnormal" style="color: #dc2626;">0</h2>
+        </div>
+      </div>
     </section>
 
     <!-- Main View 1: Cabinets Matrix -->
     <div id="section-matrix">
+      <!-- Real-time Abnormal Alert Banner (Shown when abnormal scans exist) -->
+      <div id="abnormal-alert-banner" style="display: none; margin-bottom: 1.25rem; padding: 0.85rem 1.15rem; background: #fef2f2; border: 1px solid #fca5a5; border-radius: var(--radius); border-left: 5px solid #dc2626;">
+        <div style="display: flex; align-items: center; justify-content: space-between; gap: 1rem; flex-wrap: wrap;">
+          <div style="display: flex; align-items: center; gap: 0.65rem;">
+            <span style="font-size: 1.3rem;">🚨</span>
+            <div>
+              <strong style="color: #991b1b; font-size: 0.95rem;">ตรวจพบประวัติยิงผิดตู้ / ผิดปกติ (Abnormal Scans)</strong>
+              <div id="abnormal-alert-text" style="font-size: 0.82rem; color: #7f1d1d; margin-top: 0.15rem;"></div>
+            </div>
+          </div>
+          <button type="button" class="btn-secondary" onclick="filterLogByAction('Abnormal')" style="background: #fff; border-color: #fca5a5; color: #dc2626; font-weight: 700; font-size: 0.85rem; padding: 0.4rem 0.85rem; cursor: pointer;">
+            🔍 ตรวจสอบประวัติ Abnormal ทันที →
+          </button>
+        </div>
+      </div>
+
       <!-- Department Filter Tabs -->
       <div class="dept-tabs-wrapper" id="dept-filter-tabs">
         <button class="dept-tab active" onclick="filterDepartment('ALL')">
@@ -131,6 +154,7 @@
             <option value="ALL">ทุกสถานะ</option>
             <option value="IN_CABINET">ในตู้ชาร์จ</option>
             <option value="CHECKED_OUT">เบิกใช้งาน</option>
+            <option value="ABNORMAL_LOGS">⚠️ ดูเฉพาะประวัติผิดปกติ (Abnormal)</option>
           </select>
 
           <button class="btn-secondary" onclick="openBatchQrModal()">
@@ -533,6 +557,6 @@
   <!-- Sound synthesizer -->
   <script src="/js/audio.js"></script>
   <!-- Admin App Logic -->
-  <script src="/js/admin.js?v=2.3.1"></script>
+  <script src="/js/admin.js?v=2.3.2"></script>
 </body>
 </html>

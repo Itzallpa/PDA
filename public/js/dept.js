@@ -345,8 +345,8 @@ function bindScanOnlyField(inputElem, options = {}) {
         const lastTime = keyTimestamps[keyTimestamps.length - 1];
         const diff = now - lastTime;
 
-        // If gap between keys > 60ms, a human is typing with fingers
-        if (diff > 60) {
+        // If gap between keys > 120ms, a human is typing with fingers
+        if (diff > 120) {
           scanBuffer = '';
           keyTimestamps = [];
           clearTimeout(burstTimer);
@@ -442,12 +442,15 @@ function setupScanInputListeners() {
 function handleAddPdaButtonClick() {
   const pdaInput = document.getElementById('input-pda-code');
   clearTimeout(autoAddTimeout);
-  const val = pdaInput.value.trim();
+  let val = pdaInput.value.trim();
+  if (!val) {
+    val = prompt('กรอกรหัส PDA (Custom SN เช่น OB01, ad001 หรือ Serial Number) เพื่อทดสอบ/ทำรายการ:') || '';
+    val = val.trim();
+  }
   if (val) {
     pdaInput.value = '';
     processInputCodes(val);
   } else {
-    showFeedback('info', 'ℹ️ กรุณาใช้เครื่องยิงสแกนบาร์โค้ด PDA เพื่อเพิ่มเข้าชุด (ระบบล็อกห้ามพิมพ์ด้วยมือ)');
     pdaInput.focus();
   }
 }
@@ -665,16 +668,22 @@ async function addSinglePdaToBatch(code) {
       }).catch(err => console.error('Error logging abnormal scan:', err));
 
       showFeedback('error', `
-        <div style="font-size: 1.05rem; font-weight: 700; color: #dc2626; margin-bottom: 0.35rem;">
-          ❌ อุปกรณ์ [${device.custom_sn || device.original_sn}] สังกัดตู้แผนก "${devDeptName}"
+        <div style="display: inline-block; background: #dc2626; color: #fff; font-size: 0.82rem; font-weight: 800; padding: 0.25rem 0.75rem; border-radius: 9999px; margin-bottom: 0.6rem; letter-spacing: 0.05em; box-shadow: 0 2px 4px rgba(220,38,38,0.25);">
+          🚨 ABNORMAL (รายการผิดปกติ / บันทึก Log แล้ว)
         </div>
-        <div style="font-size: 0.88rem; color: #7f1d1d; margin-bottom: 0.45rem; line-height: 1.4;">
-          เครื่องนี้ไม่ได้ผูกไว้กับตู้ของแผนก <strong>[${currentDeptId}]</strong> จึงไม่สามารถเบิกออกหรือคืนที่ตู้นี้ได้!
+        <div style="font-size: 1.12rem; font-weight: 800; color: #dc2626; margin-bottom: 0.35rem;">
+          ❌ ยิงผิดตู้! อุปกรณ์ [${device.custom_sn || device.original_sn}] สังกัดตู้แผนก "${devDeptName}"
         </div>
-        <div style="font-size: 0.82rem; color: #991b1b; background: #fee2e2; border: 1px solid #fca5a5; padding: 0.4rem 0.65rem; border-radius: 6px;">
+        <div style="font-size: 0.92rem; color: #7f1d1d; margin-bottom: 0.5rem; line-height: 1.45;">
+          เครื่องนี้ไม่ได้ผูกไว้กับตู้ของแผนก <strong>[${currentDeptId}]</strong> ระบบจึงไม่อนุญาตให้เบิกออกหรือคืนที่ตู้นี้!
+        </div>
+        <div style="font-size: 0.85rem; color: #991b1b; background: #fee2e2; border: 1px solid #fca5a5; padding: 0.45rem 0.75rem; border-radius: 6px; margin-bottom: 0.35rem;">
           👉 กรุณานำ PDA เครื่องนี้ไปสแกนทำรายการที่ <strong>หน้าตู้ประจำแผนก ${devDeptName}</strong>
         </div>
-      `);
+        <div style="font-size: 0.78rem; color: #6b7280;">
+          (บันทึก Log Action = <strong>Abnormal</strong> ไปยังระบบ Admin เรียบร้อยแล้ว)
+        </div>
+      `, '⚠️ ตรวจพบรายการผิดปกติ (Abnormal)');
       return false;
     }
 
@@ -895,14 +904,16 @@ async function submitBatchOrSingle() {
   }
 }
 
-function showFeedback(type, htmlContent) {
+function showFeedback(type, htmlContent, customTitle = null) {
   const banner = document.getElementById('result-banner');
   const title = document.getElementById('result-title');
   const msg = document.getElementById('result-message');
 
   banner.style.display = 'block';
   banner.className = `result-banner ${type}`;
-  if (type === 'success') {
+  if (customTitle) {
+    title.innerHTML = customTitle;
+  } else if (type === 'success') {
     title.innerHTML = 'รายการสำเร็จ';
   } else if (type === 'info') {
     title.innerHTML = 'แจ้งเตือน / แนะนำขั้นตอน';

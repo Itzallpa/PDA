@@ -494,6 +494,22 @@ async function fetchStats(isSilent = false) {
       document.getElementById('kpi-in-cabinet').textContent = stats.inCabinet;
       document.getElementById('kpi-checked-out').textContent = stats.checkedOut;
       document.getElementById('count-dept-all').textContent = stats.total;
+
+      const abnormalCount = stats.abnormalCount || 0;
+      const kpiAbnormal = document.getElementById('kpi-abnormal');
+      if (kpiAbnormal) kpiAbnormal.textContent = abnormalCount;
+
+      const alertBanner = document.getElementById('abnormal-alert-banner');
+      const alertText = document.getElementById('abnormal-alert-text');
+      if (alertBanner && alertText) {
+        if (abnormalCount > 0 && stats.recentAbnormals && stats.recentAbnormals.length > 0) {
+          const recents = stats.recentAbnormals.map(r => `<strong>[${r.custom_sn || r.original_sn}]</strong> ${r.notes || 'ยิงผิดตู้'}`).slice(0, 2).join(' | ');
+          alertText.innerHTML = `ตรวจพบ <strong>${abnormalCount} รายการผิดปกติ</strong> (ล่าสุด: ${recents})`;
+          alertBanner.style.display = 'block';
+        } else {
+          alertBanner.style.display = 'none';
+        }
+      }
       
       allDepartments = stats.departments;
       renderDeptFilterTabs();
@@ -566,7 +582,22 @@ function filterDepartment(deptId) {
   applyFiltersAndRender();
 }
 
+function filterLogByAction(actionVal) {
+  switchMainTab('logs');
+  const filter = document.getElementById('log-action-filter');
+  if (filter) {
+    filter.value = actionVal;
+    fetchLogs();
+  }
+}
+
 function handleStatusFilter(val) {
+  if (val === 'ABNORMAL_LOGS') {
+    filterLogByAction('Abnormal');
+    const sel = document.getElementById('status-filter');
+    if (sel) sel.value = 'ALL';
+    return;
+  }
   currentStatusFilter = val;
   applyFiltersAndRender();
 }
