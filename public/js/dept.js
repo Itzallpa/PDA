@@ -396,29 +396,32 @@ function setupScanInputListeners() {
   const pdaInput = document.getElementById('input-pda-code');
   const btnClearStaff = document.getElementById('btn-clear-staff');
 
-  // 1. Staff ID Scan-Only Field
-  bindScanOnlyField(staffInput, {
-    warningDivId: 'warn-staff-id',
-    fieldName: 'รหัสพนักงาน',
-    onValidScan: (scannedVal) => {
-      const cleanVal = (scannedVal || '').trim();
-      if (!cleanVal) return;
+  // 1. Staff ID: Allows BOTH manual typing and barcode scanning
+  staffInput.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' || e.key === 'Tab') {
+      e.preventDefault();
+      const val = staffInput.value.trim();
+      if (val) {
+        if (window.soundManager) window.soundManager.playBeep();
+        if (btnClearStaff) btnClearStaff.style.display = 'inline';
 
-      staffInput.value = cleanVal;
-      if (window.soundManager) window.soundManager.playBeep();
-      if (btnClearStaff) btnClearStaff.style.display = 'inline';
-
-      // If PDA devices are already staged in batch queue, confirm/submit immediately!
-      if (currentBatchDevices.length > 0) {
-        submitBatchOrSingle();
-      } else {
-        pdaInput.focus();
-        pdaInput.select();
+        // If PDA devices are already staged in batch queue, confirm/submit immediately!
+        if (currentBatchDevices.length > 0) {
+          submitBatchOrSingle();
+        } else {
+          pdaInput.focus();
+        }
       }
     }
   });
 
-  // 2. PDA Code Scan-Only Field (Continuous batch scanning)
+  staffInput.addEventListener('input', () => {
+    if (btnClearStaff) {
+      btnClearStaff.style.display = staffInput.value.trim() ? 'inline' : 'none';
+    }
+  });
+
+  // 2. PDA Code (รูป 2): STRICTLY SCAN-ONLY (ห้ามพิมพ์ด้วยมือเด็ดขาด - ล็อกใช้เครื่องยิงสแกนเท่านั้น)
   bindScanOnlyField(pdaInput, {
     warningDivId: 'warn-pda-code',
     fieldName: 'รหัส PDA',

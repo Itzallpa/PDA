@@ -61,21 +61,17 @@
     <div>
       <div class="scanner-card" id="scanner-box">
         
-        <!-- Step 1: Staff ID (Scan-Only with Barcode/Badge) -->
+        <!-- Step 1: Staff ID (Allows Typing & Scanning) -->
         <div class="scan-input-group" id="group-staff-id">
           <div class="scan-input-label">
-            <div style="display: flex; align-items: center; gap: 0.4rem; flex-wrap: wrap;">
-              <span>1. รหัสพนักงาน (Staff ID) <span class="req" id="req-staff-mark">*</span></span>
-              <span style="font-size: 0.72rem; color: #dc2626; font-weight: 700; background: #fee2e2; border: 1px solid #fca5a5; padding: 0.12rem 0.45rem; border-radius: 4px;">🔒 สแกนเท่านั้น</span>
-            </div>
+            <span>1. รหัสพนักงาน (Staff ID) <span class="req" id="req-staff-mark">*</span></span>
             <button type="button" id="btn-clear-staff" onclick="clearStaffId()" style="display: none; background: transparent; border: none; color: var(--blue); font-size: 0.78rem; cursor: pointer; text-decoration: underline;">
               เปลี่ยนพนักงาน
             </button>
           </div>
           <div class="scan-input-wrapper">
-            <input type="text" id="input-staff-id" placeholder="🔒 ยิงสแกนบัตรพนักงานเท่านั้น (ระบบล็อกห้ามพิมพ์ด้วยมือ)..." autocomplete="off" inputmode="none" autocorrect="off" autocapitalize="off" spellcheck="false" autofocus>
+            <input type="text" id="input-staff-id" placeholder="ยิงบัตรพนักงาน หรือพิมพ์รหัส..." autocomplete="off" autofocus>
           </div>
-          <div id="warn-staff-id" style="display: none; color: #dc2626; font-size: 0.8rem; font-weight: 600; margin-top: 0.35rem; background: #fef2f2; border: 1px solid #fecaca; padding: 0.35rem 0.65rem; border-radius: 4px;"></div>
         </div>
 
         <!-- Step 2: PDA Barcode / QR Code Input (Scan-Only) -->
@@ -188,6 +184,6 @@
   <!-- Sound synthesizer -->
   <script src="/js/audio.js"></script>
   <!-- Department Kiosk Logic -->
-  <script src="/js/dept.js?v=2.3.0"></script>
+  <script src="/js/dept.js?v=2.3.1"></script>
 </body>
 </html>
