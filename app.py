@@ -249,11 +249,9 @@ def is_dept_compatible(d1, d2, dev_dept_name=""):
     n2 = normalize_dept(d2)
     if n1 == n2:
         return True
-    if n1.startswith(n2) or n2.startswith(n1):
-        return True
     if dev_dept_name:
         n_name = normalize_dept(dev_dept_name)
-        if n_name == n2 or n_name.startswith(n2) or n2.startswith(n_name):
+        if n_name == n2:
             return True
     return False
 

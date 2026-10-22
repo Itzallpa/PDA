@@ -20,9 +20,11 @@ document.addEventListener('DOMContentLoaded', () => {
   initClock();
   setupScanInputListeners();
   loadCabinetData();
+  loadKioskRecentAbnormals();
 
-  // Auto-refresh cabinet list every 4 seconds
+  // Auto-refresh cabinet list and recent abnormal logs every 4 seconds
   setInterval(loadCabinetData, 4000);
+  setInterval(loadKioskRecentAbnormals, 4000);
 });
 
 function normalizeDeptCode(s) {
@@ -34,10 +36,9 @@ function isDepartmentCompatible(d1, d2, devDeptName = '') {
   const n1 = normalizeDeptCode(d1);
   const n2 = normalizeDeptCode(d2);
   if (n1 === n2) return true;
-  if (n1.startsWith(n2) || n2.startsWith(n1)) return true;
   if (devDeptName) {
     const nName = normalizeDeptCode(devDeptName);
-    if (nName === n2 || nName.startsWith(n2) || n2.startsWith(nName)) return true;
+    if (nName === n2) return true;
   }
   return false;
 }
@@ -316,8 +317,8 @@ function bindScanOnlyField(inputElem, options = {}) {
       }
       const avgInterval = totalInterval / (count - 1);
 
-      // Barcode scanners send keys at avg < 50ms and max < 85ms
-      if (avgInterval > 55 || maxInterval > 85) {
+      // Barcode scanners send keys in rapid bursts (avg < 110ms, max < 180ms)
+      if (avgInterval > 110 || maxInterval > 180) {
         scanBuffer = '';
         keyTimestamps = [];
         flashWarning(`🚫 ตรวจพบการพิมพ์ด้วยมือ — ระบบอนุญาตเฉพาะการยิงสแกนบาร์โค้ดเท่านั้น!`);
@@ -345,8 +346,8 @@ function bindScanOnlyField(inputElem, options = {}) {
         const lastTime = keyTimestamps[keyTimestamps.length - 1];
         const diff = now - lastTime;
 
-        // If gap between keys > 120ms, a human is typing with fingers
-        if (diff > 120) {
+        // If gap between keys > 180ms, a human is typing with fingers
+        if (diff > 180) {
           scanBuffer = '';
           keyTimestamps = [];
           clearTimeout(burstTimer);
@@ -359,7 +360,7 @@ function bindScanOnlyField(inputElem, options = {}) {
       keyTimestamps.push(now);
 
       // Inactivity timeout:
-      // If no next key arrives within 65ms:
+      // If no next key arrives within 90ms:
       // Check if it was a valid fast scanner burst without an Enter suffix (>= 3 chars, fast avg)
       clearTimeout(burstTimer);
       burstTimer = setTimeout(() => {
@@ -373,7 +374,7 @@ function bindScanOnlyField(inputElem, options = {}) {
             if (d > mx) mx = d;
           }
           const avg = tot / (keyTimestamps.length - 1);
-          if (avg <= 45 && mx <= 80) {
+          if (avg <= 90 && mx <= 160) {
             // Valid barcode scan without Enter suffix!
             const scannedVal = scanBuffer.trim();
             scanBuffer = '';
@@ -390,7 +391,7 @@ function bindScanOnlyField(inputElem, options = {}) {
         scanBuffer = '';
         keyTimestamps = [];
         flashWarning(`🚫 ไม่อนุญาตให้พิมพ์ด้วยมือ (${fieldLabel}) — กรุณาใช้เครื่องยิงสแกนบาร์โค้ดเท่านั้น!`);
-      }, 65);
+      }, 90);
     }
   });
 }
@@ -435,6 +436,62 @@ function setupScanInputListeners() {
 
       pdaInput.value = '';
       processInputCodes(cleanVal);
+    }
+  });
+
+  // 3. Document-level background scanner listener (ดักจับการยิงบาร์โค้ดแม้ไม่ได้คลิกช่อง input)
+  let globalScanBuffer = '';
+  let globalTimestamps = [];
+  let globalTimer = null;
+
+  document.addEventListener('keydown', (e) => {
+    // If active element is input-staff-id, let user type/scan there normally
+    if (document.activeElement === staffInput) return;
+    // If active element is input-pda-code, bindScanOnlyField handles it
+    if (document.activeElement === pdaInput) return;
+
+    if (e.key === 'Enter' || e.key === 'Tab') {
+      const val = globalScanBuffer.trim();
+      const count = globalTimestamps.length;
+      globalScanBuffer = '';
+      globalTimestamps = [];
+      clearTimeout(globalTimer);
+
+      if (val && count >= 2) {
+        let tot = 0;
+        let mx = 0;
+        for (let i = 1; i < count; i++) {
+          const d = globalTimestamps[i] - globalTimestamps[i - 1];
+          tot += d;
+          if (d > mx) mx = d;
+        }
+        const avg = tot / (count - 1);
+        if (avg <= 110 && mx <= 180) {
+          // Scanner burst detected from background!
+          e.preventDefault();
+          pdaInput.value = '';
+          processInputCodes(val);
+        }
+      }
+      return;
+    }
+
+    if (e.key.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey) {
+      const now = performance.now();
+      if (globalTimestamps.length > 0) {
+        const last = globalTimestamps[globalTimestamps.length - 1];
+        if (now - last > 180) {
+          globalScanBuffer = '';
+          globalTimestamps = [];
+        }
+      }
+      globalScanBuffer += e.key;
+      globalTimestamps.push(now);
+      clearTimeout(globalTimer);
+      globalTimer = setTimeout(() => {
+        globalScanBuffer = '';
+        globalTimestamps = [];
+      }, 180);
     }
   });
 }
@@ -623,10 +680,37 @@ async function addSinglePdaToBatch(code) {
           staff_id: staffVal,
           notes: `ยิงเครื่องไม่พบในระบบ: สแกนรหัส "${cleanCode}" ที่ตู้ [${currentDeptId || 'UNKNOWN'}]`
         })
+      }).then(() => {
+        loadKioskRecentAbnormals();
       }).catch(err => console.error('Error logging abnormal scan:', err));
 
-      showFeedback('error', `❌ ไม่พบอุปกรณ์รหัส "${cleanCode}" ในระบบฐานข้อมูล (กรุณาตรวจสอบว่าลงทะเบียนเครื่องแล้วหรือยัง)`);
-      return false;
+      const unknownDev = {
+        id: 'unreg_' + Date.now(),
+        custom_sn: cleanCode,
+        original_sn: cleanCode,
+        department_id: 'UNKNOWN',
+        department_name: 'ไม่พบในระบบ',
+        isAbnormal: true,
+        abnormalReason: `ไม่พบอุปกรณ์รหัส "${cleanCode}" ในระบบฐานข้อมูล (กรุณาลงทะเบียนก่อน)`
+      };
+      addDeviceToQueueDirect(unknownDev);
+      renderBatchList();
+
+      showFeedback('error', `
+        <div style="display: inline-block; background: #dc2626; color: #fff; font-size: 0.82rem; font-weight: 800; padding: 0.25rem 0.75rem; border-radius: 9999px; margin-bottom: 0.6rem; letter-spacing: 0.05em; box-shadow: 0 2px 4px rgba(220,38,38,0.25);">
+          🚨 ABNORMAL (ไม่พบในระบบ / บันทึก Log แล้ว)
+        </div>
+        <div style="font-size: 1.12rem; font-weight: 800; color: #dc2626; margin-bottom: 0.35rem;">
+          ❌ ไม่พบอุปกรณ์รหัส "${cleanCode}" ในระบบฐานข้อมูล
+        </div>
+        <div style="font-size: 0.92rem; color: #7f1d1d; margin-bottom: 0.5rem; line-height: 1.45;">
+          ระบบแสดงเครื่องนี้ขึ้นในชุดพร้อมแถบแดง และบันทึกประวัติ Abnormal ไปยังส่วนกลางแล้ว
+        </div>
+        <div style="font-size: 0.85rem; color: #991b1b; background: #fee2e2; border: 1px solid #fca5a5; padding: 0.45rem 0.75rem; border-radius: 6px; margin-bottom: 0.35rem;">
+          👉 กรุณากดปุ่ม <strong>[✕ นำออก]</strong> ที่เครื่องนี้ก่อนกดปุ่มยืนยัน
+        </div>
+      `, '⚠️ ไม่พบข้อมูลอุปกรณ์ (Abnormal)');
+      return true;
     }
 
     // If API returned a compound match of multiple devices (e.g. ad003ad004)
@@ -665,7 +749,15 @@ async function addSinglePdaToBatch(code) {
           staff_id: staffVal,
           notes: `ยิงผิดตู้: เครื่องสังกัดตู้ [${device.department_id} - ${devDeptName}] ถูกนำมายิงที่ตู้ [${currentDeptId}] (โหมด${modeLabel})`
         })
+      }).then(() => {
+        loadKioskRecentAbnormals();
       }).catch(err => console.error('Error logging abnormal scan:', err));
+
+      // Stage as Abnormal in batch list so it appears prominently on screen!
+      device.isAbnormal = true;
+      device.abnormalReason = `ยิงผิดตู้: เครื่องนี้สังกัดแผนก [${devDeptName}] ไม่ใช่ตู้ [${currentDeptId}]`;
+      addDeviceToQueueDirect(device);
+      renderBatchList();
 
       showFeedback('error', `
         <div style="display: inline-block; background: #dc2626; color: #fff; font-size: 0.82rem; font-weight: 800; padding: 0.25rem 0.75rem; border-radius: 9999px; margin-bottom: 0.6rem; letter-spacing: 0.05em; box-shadow: 0 2px 4px rgba(220,38,38,0.25);">
@@ -675,16 +767,16 @@ async function addSinglePdaToBatch(code) {
           ❌ ยิงผิดตู้! อุปกรณ์ [${device.custom_sn || device.original_sn}] สังกัดตู้แผนก "${devDeptName}"
         </div>
         <div style="font-size: 0.92rem; color: #7f1d1d; margin-bottom: 0.5rem; line-height: 1.45;">
-          เครื่องนี้ไม่ได้ผูกไว้กับตู้ของแผนก <strong>[${currentDeptId}]</strong> ระบบจึงไม่อนุญาตให้เบิกออกหรือคืนที่ตู้นี้!
+          เครื่องนี้ไม่ได้ผูกไว้กับตู้ของแผนก <strong>[${currentDeptId}]</strong> (ระบบแสดงขึ้นในชุดพร้อมแถบแดง และบันทึก Log Abnormal แล้ว)
         </div>
         <div style="font-size: 0.85rem; color: #991b1b; background: #fee2e2; border: 1px solid #fca5a5; padding: 0.45rem 0.75rem; border-radius: 6px; margin-bottom: 0.35rem;">
-          👉 กรุณานำ PDA เครื่องนี้ไปสแกนทำรายการที่ <strong>หน้าตู้ประจำแผนก ${devDeptName}</strong>
+          👉 กรุณานำ PDA เครื่องนี้ไปสแกนทำรายการที่ <strong>หน้าตู้ประจำแผนก ${devDeptName}</strong> หรือกดปุ่ม <strong>[✕ นำออก]</strong>
         </div>
         <div style="font-size: 0.78rem; color: #6b7280;">
           (บันทึก Log Action = <strong>Abnormal</strong> ไปยังระบบ Admin เรียบร้อยแล้ว)
         </div>
       `, '⚠️ ตรวจพบรายการผิดปกติ (Abnormal)');
-      return false;
+      return true;
     }
 
     // Status Validations with Actionable Guidance
@@ -755,21 +847,53 @@ function renderBatchList() {
 
   container.style.display = 'block';
   badge.style.display = 'inline-block';
-  countVal.textContent = currentBatchDevices.length;
+  
+  const abnormalCount = currentBatchDevices.filter(d => d.isAbnormal).length;
+  if (abnormalCount > 0) {
+    badge.style.background = '#fee2e2';
+    badge.style.color = '#dc2626';
+    badge.innerHTML = `ในชุด: <strong>${currentBatchDevices.length}</strong> เครื่อง (⚠️ ผิดปกติ <strong>${abnormalCount}</strong>)`;
+  } else {
+    badge.style.background = 'var(--blue-subtle)';
+    badge.style.color = 'var(--blue)';
+    badge.innerHTML = `ในชุด: <strong>${currentBatchDevices.length}</strong> เครื่อง`;
+  }
 
-  listElem.innerHTML = currentBatchDevices.map((dev, idx) => `
-    <div class="batch-item-chip">
-      <div>
-        <span class="code-badge">${dev.custom_sn}</span>
-        <span style="color: var(--text-muted); font-size: 0.78rem; margin-left: 0.4rem;">
-          SN: ${dev.original_sn} (${dev.model || 'PDA'})
-        </span>
+  listElem.innerHTML = currentBatchDevices.map((dev, idx) => {
+    if (dev.isAbnormal) {
+      return `
+        <div class="batch-item-chip" style="background: #fef2f2; border: 1.5px solid #ef4444; border-left: 5px solid #dc2626; padding: 0.6rem 0.75rem; border-radius: 8px; display: flex; align-items: center; justify-content: space-between; gap: 0.5rem;">
+          <div style="flex: 1;">
+            <div style="display: flex; align-items: center; gap: 0.4rem; flex-wrap: wrap;">
+              <span style="background: #dc2626; color: #fff; font-size: 0.68rem; font-weight: 800; padding: 0.15rem 0.5rem; border-radius: 9999px; letter-spacing: 0.03em;">🚨 ABNORMAL</span>
+              <span class="code-badge" style="background: #fee2e2; color: #991b1b; font-weight: 800; font-size: 0.95rem;">${dev.custom_sn}</span>
+              <span style="color: #7f1d1d; font-size: 0.78rem; font-family: monospace;">(SN: ${dev.original_sn})</span>
+            </div>
+            <div style="font-size: 0.8rem; color: #991b1b; font-weight: 700; margin-top: 0.25rem;">
+              ⚠️ ${dev.abnormalReason || 'เครื่องผิดปกติ'}
+            </div>
+          </div>
+          <button type="button" class="remove-btn" onclick="removeFromBatch(${idx})" title="นำเครื่องที่ผิดปกติออก" style="background: #dc2626; color: white; border: none; border-radius: 6px; padding: 0.35rem 0.65rem; font-weight: 700; font-size: 0.82rem; cursor: pointer; white-space: nowrap;">
+            ✕ นำออก
+          </button>
+        </div>
+      `;
+    }
+
+    return `
+      <div class="batch-item-chip">
+        <div>
+          <span class="code-badge">${dev.custom_sn}</span>
+          <span style="color: var(--text-muted); font-size: 0.78rem; margin-left: 0.4rem;">
+            SN: ${dev.original_sn} (${dev.model || 'PDA'})
+          </span>
+        </div>
+        <button type="button" class="remove-btn" onclick="removeFromBatch(${idx})" title="ลบออกจากชุด">
+          ✕
+        </button>
       </div>
-      <button type="button" class="remove-btn" onclick="removeFromBatch(${idx})" title="ลบออกจากชุด">
-        ✕
-      </button>
-    </div>
-  `).join('');
+    `;
+  }).join('');
 
   updateSubmitButtonLabel();
 }
@@ -789,10 +913,26 @@ function clearBatchQueue() {
 
 function updateSubmitButtonLabel() {
   const submitText = document.getElementById('submit-text');
-  if (!submitText) return;
+  const submitBtn = document.getElementById('btn-submit');
+  if (!submitText || !submitBtn) return;
 
   const count = currentBatchDevices.length;
   const isCheckout = currentMode === 'CHECK_OUT';
+  const abnormals = currentBatchDevices.filter(d => d.isAbnormal);
+
+  if (abnormals.length > 0) {
+    submitBtn.disabled = true;
+    submitBtn.style.opacity = '0.7';
+    submitBtn.style.cursor = 'not-allowed';
+    submitBtn.style.backgroundColor = '#991b1b';
+    submitText.innerHTML = `⚠️ ไม่สามารถยืนยันได้ (มีรายการผิดตู้ ${abnormals.length} เครื่อง — กรุณากด [✕ นำออก])`;
+    return;
+  }
+
+  submitBtn.disabled = false;
+  submitBtn.style.opacity = '1';
+  submitBtn.style.cursor = 'pointer';
+  submitBtn.style.backgroundColor = '';
 
   if (count > 0) {
     submitText.textContent = isCheckout 
@@ -820,7 +960,6 @@ async function submitBatchOrSingle() {
     pdaInput.value = '';
     const added = await processInputCodes(pendingCode);
     if (!added && currentBatchDevices.length === 0) {
-      // Specific error feedback is already displayed by processInputCodes!
       pdaInput.focus();
       return;
     }
@@ -828,6 +967,15 @@ async function submitBatchOrSingle() {
 
   if (currentBatchDevices.length === 0) {
     showFeedback('error', 'กรุณายิงรหัส PDA อย่างน้อย 1 เครื่อง เพื่อทำรายการ');
+    pdaInput.focus();
+    return;
+  }
+
+  // Block submission if any abnormal device is present in the batch
+  const abnormalItems = currentBatchDevices.filter(d => d.isAbnormal);
+  if (abnormalItems.length > 0) {
+    if (window.soundManager) window.soundManager.playError();
+    showFeedback('error', `❌ ไม่สามารถยืนยันรายการได้: มี PDA ผิดปกติ (Abnormal / ผิดตู้) อยู่ในชุดจำนวน ${abnormalItems.length} เครื่อง<br>👉 กรุณากดปุ่ม <strong>[✕ นำออก]</strong> ที่เครื่องสีแดงก่อนยืนยัน`);
     pdaInput.focus();
     return;
   }
@@ -943,6 +1091,35 @@ async function loadCabinetData() {
     }
   } catch (err) {
     console.warn('Error polling cabinet data:', err);
+  }
+}
+
+async function loadKioskRecentAbnormals() {
+  const container = document.getElementById('kiosk-recent-abnormals');
+  const badge = document.getElementById('kiosk-abnormal-badge');
+  if (!container) return;
+
+  try {
+    const res = await fetch(`/api/logs?action=Abnormal&department=${encodeURIComponent(currentDeptId)}&limit=5`);
+    const data = await res.json();
+    if (data.success && data.logs) {
+      if (badge) badge.textContent = data.total || data.logs.length;
+      if (data.logs.length === 0) {
+        container.innerHTML = `<div style="text-align: center; color: var(--text-muted); font-size: 0.8rem; padding: 0.6rem;">ยังไม่มีรายการผิดปกติ</div>`;
+        return;
+      }
+      container.innerHTML = data.logs.map(l => `
+        <div style="background: #fff; border-left: 3.5px solid #dc2626; border-radius: 6px; padding: 0.45rem 0.65rem; box-shadow: 0 1px 3px rgba(0,0,0,0.06); font-size: 0.78rem;">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.2rem;">
+            <strong style="color: #dc2626; font-family: monospace; font-size: 0.85rem;">${l.custom_sn || l.original_sn}</strong>
+            <span style="color: #6b7280; font-size: 0.7rem; font-family: monospace;">${(l.timestamp || '').split(' ')[1] || l.timestamp}</span>
+          </div>
+          <div style="color: #7f1d1d; font-size: 0.75rem; line-height: 1.35; font-weight: 500;">${l.notes || 'ยิงผิดตู้'}</div>
+        </div>
+      `).join('');
+    }
+  } catch (err) {
+    console.warn('Error loading kiosk recent abnormals:', err);
   }
 }
 
