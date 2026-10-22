@@ -1257,13 +1257,31 @@ function renderLogsTable(logs) {
   }
 
   tbody.innerHTML = logs.map(l => {
+    const isAbnormal = (l.action || '').toUpperCase() === 'ABNORMAL';
     const isOut = l.action === 'CHECK_OUT';
-    const actionBadge = isOut 
-      ? `<span class="pill-status red">📤 เบิกออก</span>`
-      : `<span class="pill-status green">📥 คืนเข้าตู้</span>`;
+    
+    let actionBadge = '';
+    if (isAbnormal) {
+      actionBadge = `<span class="pill-status" style="background: #fef2f2; color: #dc2626; border: 1px solid #fca5a5; font-weight: 700;">⚠️ Abnormal</span>`;
+    } else if (isOut) {
+      actionBadge = `<span class="pill-status red">📤 เบิกออก</span>`;
+    } else {
+      actionBadge = `<span class="pill-status green">📥 คืนเข้าตู้</span>`;
+    }
+
+    let statusContent = '';
+    if (isAbnormal) {
+      statusContent = `<div style="color: #dc2626; font-size: 0.82rem; font-weight: 600; line-height: 1.35;">⚠️ ${l.notes || 'ยิงผิดตู้ / ผิดพลาด'}</div>`;
+    } else if (isOut) {
+      statusContent = `<span style="color: var(--color-red-text); font-weight: 600;">กำลังใช้งาน</span>`;
+    } else {
+      statusContent = `<span style="color: var(--color-green-text); font-weight: 600;">อยู่ในตู้</span>`;
+    }
+
+    const rowBg = isAbnormal ? 'style="background: rgba(254, 242, 242, 0.4);"' : '';
 
     return `
-      <tr>
+      <tr ${rowBg}>
         <td style="font-family: 'JetBrains Mono', monospace; color: var(--text-muted); font-size: 0.8rem;">#${l.id}</td>
         <td style="font-family: 'JetBrains Mono', monospace; font-size: 0.85rem; color: var(--text-body);">${l.timestamp}</td>
         <td><strong style="color: #1d4ed8;">${l.department_id}</strong> <span style="color: var(--text-muted);">(${l.department_name || ''})</span></td>
@@ -1271,7 +1289,7 @@ function renderLogsTable(logs) {
         <td><strong style="font-family: 'JetBrains Mono', monospace; color: var(--text-main); font-size: 0.95rem;">${l.custom_sn}</strong></td>
         <td style="font-family: 'JetBrains Mono', monospace; color: var(--text-muted);">${l.original_sn}</td>
         <td><strong style="color: #0f172a;">${l.staff_id || '-'}</strong></td>
-        <td>${isOut ? '<span style="color: var(--color-red-text); font-weight: 600;">กำลังใช้งาน</span>' : '<span style="color: var(--color-green-text); font-weight: 600;">อยู่ในตู้</span>'}</td>
+        <td>${statusContent}</td>
       </tr>
     `;
   }).join('');

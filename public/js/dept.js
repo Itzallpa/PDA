@@ -607,6 +607,21 @@ async function addSinglePdaToBatch(code) {
       scannerBox.classList.add('flash-error');
       setTimeout(() => scannerBox.classList.remove('flash-error'), 800);
 
+      // Record Abnormal log for unregistered/unknown barcode
+      const staffVal = staffInput.value.trim() || 'UNKNOWN';
+      fetch('/api/logs/abnormal', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          code: cleanCode,
+          original_sn: cleanCode,
+          custom_sn: cleanCode,
+          department_id: currentDeptId || 'UNKNOWN',
+          staff_id: staffVal,
+          notes: `ยิงเครื่องไม่พบในระบบ: สแกนรหัส "${cleanCode}" ที่ตู้ [${currentDeptId || 'UNKNOWN'}]`
+        })
+      }).catch(err => console.error('Error logging abnormal scan:', err));
+
       showFeedback('error', `❌ ไม่พบอุปกรณ์รหัส "${cleanCode}" ในระบบฐานข้อมูล (กรุณาตรวจสอบว่าลงทะเบียนเครื่องแล้วหรือยัง)`);
       return false;
     }
@@ -632,6 +647,22 @@ async function addSinglePdaToBatch(code) {
       scannerBox.classList.remove('flash-success');
       scannerBox.classList.add('flash-error');
       setTimeout(() => scannerBox.classList.remove('flash-error'), 800);
+
+      // Record Abnormal log to backend immediately
+      const modeLabel = currentMode === 'CHECK_OUT' ? 'เบิกออก' : 'คืนเข้าตู้';
+      const staffVal = staffInput.value.trim() || 'UNKNOWN';
+      fetch('/api/logs/abnormal', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          device_id: device.id,
+          original_sn: device.original_sn,
+          custom_sn: device.custom_sn,
+          department_id: currentDeptId,
+          staff_id: staffVal,
+          notes: `ยิงผิดตู้: เครื่องสังกัดตู้ [${device.department_id} - ${devDeptName}] ถูกนำมายิงที่ตู้ [${currentDeptId}] (โหมด${modeLabel})`
+        })
+      }).catch(err => console.error('Error logging abnormal scan:', err));
 
       showFeedback('error', `
         <div style="font-size: 1.05rem; font-weight: 700; color: #dc2626; margin-bottom: 0.35rem;">

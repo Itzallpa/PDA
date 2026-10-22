@@ -771,6 +771,19 @@ app.post('/api/scan', (req, res) => {
     const devDept = device.department_id || '';
     const devDeptName = device.department_name || devDept;
     if (department_id && devDept && !isDepartmentCompatible(devDept, department_id, devDeptName)) {
+      const noteMsg = `ยิงผิดตู้: เครื่องสังกัดแผนก ${devDept} (${devDeptName}) ถูกนำมายิงที่ตู้ ${department_id}`;
+      db.prepare(`
+        INSERT INTO logs (device_id, original_sn, custom_sn, department_id, action, staff_id, timestamp, notes)
+        VALUES (?, ?, ?, ?, 'Abnormal', ?, datetime('now', 'localtime'), ?)
+      `).run(
+        device.id || null,
+        device.original_sn || code,
+        device.custom_sn || code,
+        department_id,
+        staff_id || 'UNKNOWN',
+        noteMsg
+      );
+
       return res.status(400).json({
         success: false,
         errorType: 'DEPARTMENT_MISMATCH',
@@ -964,6 +977,18 @@ app.post('/api/scan/batch', (req, res) => {
         const devDept = device.department_id || '';
         const devDeptName = device.department_name || devDept;
         if (department_id && devDept && !isDepartmentCompatible(devDept, department_id, devDeptName)) {
+          const noteMsg = `ยิงผิดตู้: เครื่องสังกัดแผนก ${devDept} (${devDeptName}) ถูกนำมายิงที่ตู้ ${department_id}`;
+          insertLogStmt.run(
+            device.id || null,
+            device.original_sn || code,
+            device.custom_sn || code,
+            department_id,
+            'Abnormal',
+            staff_id || 'UNKNOWN'
+          );
+          // Update the notes for this last inserted log
+          db.prepare('UPDATE logs SET notes = ? WHERE id = last_insert_rowid()').run(noteMsg);
+
           errors.push({
             code,
             message: `❌ อุปกรณ์ [${device.custom_sn}] สังกัดตู้แผนก "${devDeptName}" ไม่สามารถทำรายการที่ตู้ "${department_id}" ได้ (เครื่องไม่ได้อยู่ในตู้นี้)`
@@ -1027,6 +1052,39 @@ app.post('/api/scan/batch', (req, res) => {
   }
 });
 
+// 7.2 Record Abnormal Log Endpoint
+app.post('/api/logs/abnormal', (req, res) => {
+  try {
+    let { device_id, original_sn, custom_sn, department_id, staff_id, notes, code } = req.body || {};
+    original_sn = (original_sn || '').toString().trim();
+    custom_sn = (custom_sn || '').toString().trim();
+    department_id = (department_id || 'UNKNOWN').toString().trim().toUpperCase();
+    staff_id = (staff_id || 'UNKNOWN').toString().trim();
+    notes = (notes || 'บันทึกรายการผิดปกติ (Abnormal)').toString().trim();
+
+    if (!original_sn && !custom_sn) {
+      original_sn = (code || 'UNKNOWN').toString().trim();
+      custom_sn = (code || 'UNKNOWN').toString().trim();
+    }
+
+    const insert = db.prepare(`
+      INSERT INTO logs (device_id, original_sn, custom_sn, department_id, action, staff_id, timestamp, notes)
+      VALUES (?, ?, ?, ?, 'Abnormal', ?, datetime('now', 'localtime'), ?)
+    `);
+    const result = insert.run(device_id || null, original_sn, custom_sn, department_id, staff_id, notes);
+
+    res.json({
+      success: true,
+      log_id: result.lastInsertRowid,
+      action: 'Abnormal',
+      message: 'บันทึกประวัติ Abnormal สำเร็จ'
+    });
+  } catch (err) {
+    console.error('Record abnormal log error:', err);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
 // 8. Transaction Logs with Filters & Pagination
 app.get('/api/logs', (req, res) => {
   try {
@@ -1048,9 +1106,9 @@ app.get('/api/logs', (req, res) => {
       params.push(action);
     }
     if (search && search.trim() !== '') {
-      query += ' AND (l.original_sn LIKE ? OR l.custom_sn LIKE ? OR l.staff_id LIKE ?)';
+      query += ' AND (l.original_sn LIKE ? OR l.custom_sn LIKE ? OR l.staff_id LIKE ? OR l.notes LIKE ?)';
       const s = `%${search.trim()}%`;
-      params.push(s, s, s);
+      params.push(s, s, s, s);
     }
 
     query += ' ORDER BY l.id DESC LIMIT ? OFFSET ?';
@@ -1070,9 +1128,9 @@ app.get('/api/logs', (req, res) => {
       countParams.push(action);
     }
     if (search && search.trim() !== '') {
-      countQuery += ' AND (l.original_sn LIKE ? OR l.custom_sn LIKE ? OR l.staff_id LIKE ?)';
+      countQuery += ' AND (l.original_sn LIKE ? OR l.custom_sn LIKE ? OR l.staff_id LIKE ? OR l.notes LIKE ?)';
       const s = `%${search.trim()}%`;
-      countParams.push(s, s, s);
+      countParams.push(s, s, s, s);
     }
     const totalCount = db.prepare(countQuery).get(...countParams).total;
 
@@ -1103,9 +1161,9 @@ app.get('/api/logs/export', (req, res) => {
       params.push(action);
     }
     if (search && search.trim() !== '') {
-      query += ' AND (l.original_sn LIKE ? OR l.custom_sn LIKE ? OR l.staff_id LIKE ?)';
+      query += ' AND (l.original_sn LIKE ? OR l.custom_sn LIKE ? OR l.staff_id LIKE ? OR l.notes LIKE ?)';
       const s = `%${search.trim()}%`;
-      params.push(s, s, s);
+      params.push(s, s, s, s);
     }
     query += ' ORDER BY l.id DESC';
 
@@ -1116,7 +1174,11 @@ app.get('/api/logs/export', (req, res) => {
     const csvLines = [headers.join(',')];
 
     for (const r of rows) {
-      const actionThai = r.action === 'CHECK_OUT' ? 'เบิกออก' : 'คืนเข้าตู้';
+      let actionThai = r.action;
+      if (r.action === 'CHECK_OUT') actionThai = 'เบิกออก';
+      else if (r.action === 'CHECK_IN') actionThai = 'คืนเข้าตู้';
+      else if ((r.action || '').toLowerCase() === 'abnormal') actionThai = 'Abnormal (ผิดปกติ/ยิงผิดตู้)';
+
       const line = [
         r.id,
         `"${r.timestamp || ''}"`,

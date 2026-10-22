@@ -824,6 +824,19 @@ def scan_device():
     dev_dept = device.get('department_id') or ''
     dev_dept_name = device.get('department_name') or dev_dept
     if department_id and dev_dept and not is_dept_compatible(dev_dept, department_id, dev_dept_name):
+        note_msg = f'ยิงผิดตู้: เครื่องสังกัดแผนก {dev_dept} ({dev_dept_name}) ถูกนำมายิงที่ตู้ {department_id}'
+        cur.execute('''
+            INSERT INTO logs (device_id, original_sn, custom_sn, department_id, action, staff_id, timestamp, notes)
+            VALUES (?, ?, ?, ?, 'Abnormal', ?, datetime('now', 'localtime'), ?)
+        ''', (
+            device.get('id'),
+            device.get('original_sn') or code,
+            device.get('custom_sn') or code,
+            department_id,
+            staff_id or 'UNKNOWN',
+            note_msg
+        ))
+        db.commit()
         db.close()
         return jsonify({
             'success': False,
@@ -958,6 +971,18 @@ def scan_batch():
 
             # Department validation: device MUST belong to this cabinet's department!
             if department_id and dev_dept and not is_dept_compatible(dev_dept, department_id, dev_dept_name):
+                note_msg = f'ยิงผิดตู้: เครื่องสังกัดแผนก {dev_dept} ({dev_dept_name}) ถูกนำมายิงที่ตู้ {department_id}'
+                cur.execute('''
+                    INSERT INTO logs (device_id, original_sn, custom_sn, department_id, action, staff_id, timestamp, notes)
+                    VALUES (?, ?, ?, ?, 'Abnormal', ?, datetime('now', 'localtime'), ?)
+                ''', (
+                    device.get('id'),
+                    device.get('original_sn') or code,
+                    device.get('custom_sn') or code,
+                    department_id,
+                    staff_id or 'UNKNOWN',
+                    note_msg
+                ))
                 errors.append({
                     'code': code,
                     'message': f'❌ อุปกรณ์ [{device["custom_sn"]}] สังกัดตู้แผนก "{dev_dept_name}" ไม่สามารถทำรายการที่ตู้ "{department_id}" ได้ (เครื่องไม่ได้อยู่ในตู้นี้)'
@@ -1034,6 +1059,41 @@ def scan_batch():
         'message': msg
     }), 200 if len(processed) > 0 else 400
 
+@app.route('/api/logs/abnormal', methods=['POST'])
+def record_abnormal_log():
+    data = request.get_json(silent=True) or {}
+    device_id = data.get('device_id')
+    original_sn = (data.get('original_sn') or '').strip()
+    custom_sn = (data.get('custom_sn') or '').strip()
+    department_id = (data.get('department_id') or '').strip().upper() or 'UNKNOWN'
+    staff_id = (data.get('staff_id') or '').strip() or 'UNKNOWN'
+    notes = (data.get('notes') or '').strip()
+
+    if not original_sn and not custom_sn:
+        code = (data.get('code') or '').strip()
+        original_sn = code or 'UNKNOWN'
+        custom_sn = code or 'UNKNOWN'
+
+    if not notes:
+        notes = 'บันทึกรายการผิดปกติ (Abnormal)'
+
+    db = get_db()
+    cur = db.cursor()
+    cur.execute('''
+        INSERT INTO logs (device_id, original_sn, custom_sn, department_id, action, staff_id, timestamp, notes)
+        VALUES (?, ?, ?, ?, 'Abnormal', ?, datetime('now', 'localtime'), ?)
+    ''', (device_id, original_sn, custom_sn, department_id, staff_id, notes))
+    db.commit()
+    log_id = cur.lastrowid
+    db.close()
+
+    return jsonify({
+        'success': True,
+        'log_id': log_id,
+        'action': 'Abnormal',
+        'message': 'บันทึกประวัติ Abnormal สำเร็จ'
+    })
+
 @app.route('/api/logs', methods=['GET'])
 def get_logs():
     department = request.args.get('department')
@@ -1060,8 +1120,8 @@ def get_logs():
 
     if search and search.strip():
         s = f"%{search.strip()}%"
-        query += ' AND (l.original_sn LIKE ? OR l.custom_sn LIKE ? OR l.staff_id LIKE ?)'
-        params.extend([s, s, s])
+        query += ' AND (l.original_sn LIKE ? OR l.custom_sn LIKE ? OR l.staff_id LIKE ? OR l.notes LIKE ?)'
+        params.extend([s, s, s, s])
 
     count_query = query.replace('SELECT l.*, d.name as department_name', 'SELECT COUNT(*) as count')
     query += ' ORDER BY l.id DESC LIMIT ? OFFSET ?'
@@ -1108,8 +1168,8 @@ def export_logs():
 
     if search and search.strip():
         s = f"%{search.strip()}%"
-        query += ' AND (l.original_sn LIKE ? OR l.custom_sn LIKE ? OR l.staff_id LIKE ?)'
-        params.extend([s, s, s])
+        query += ' AND (l.original_sn LIKE ? OR l.custom_sn LIKE ? OR l.staff_id LIKE ? OR l.notes LIKE ?)'
+        params.extend([s, s, s, s])
 
     query += ' ORDER BY l.id DESC'
 
@@ -1125,7 +1185,16 @@ def export_logs():
     writer.writerow(['ID', 'Timestamp', 'Action', 'Custom SN', 'Original SN', 'Department ID', 'Department Name', 'Staff ID', 'Notes'])
 
     for r in rows:
-        action_th = 'เบิกออก' if r['action'] == 'CHECK_OUT' else 'คืนเข้าตู้'
+        act = (r['action'] or '').strip()
+        if act == 'CHECK_OUT':
+            action_th = 'เบิกออก'
+        elif act == 'CHECK_IN':
+            action_th = 'คืนเข้าตู้'
+        elif act.lower() == 'abnormal':
+            action_th = 'Abnormal (ผิดปกติ/ยิงผิดตู้)'
+        else:
+            action_th = act
+
         writer.writerow([
             r['id'],
             r['timestamp'],
