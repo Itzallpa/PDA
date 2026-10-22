@@ -239,6 +239,24 @@ def extract_compound_codes(code_str):
 
     return result
 
+def normalize_dept(code):
+    return re.sub(r'[\s\-_]+', '', (code or '')).upper()
+
+def is_dept_compatible(d1, d2, dev_dept_name=""):
+    if not d1 or not d2:
+        return True
+    n1 = normalize_dept(d1)
+    n2 = normalize_dept(d2)
+    if n1 == n2:
+        return True
+    if n1.startswith(n2) or n2.startswith(n1):
+        return True
+    if dev_dept_name:
+        n_name = normalize_dept(dev_dept_name)
+        if n_name == n2 or n_name.startswith(n2) or n2.startswith(n_name):
+            return True
+    return False
+
 # -----------------------------------------------------------------------------
 # Admin Authentication & Password Management
 # -----------------------------------------------------------------------------
@@ -802,8 +820,18 @@ def scan_device():
 
     device = dict(device)
     
-    # Log transaction under cabinet or device department seamlessly
-    txn_dept = department_id or device.get('department_id') or 'OBD A'
+    # Department validation: device MUST belong to this cabinet's department!
+    dev_dept = device.get('department_id') or ''
+    dev_dept_name = device.get('department_name') or dev_dept
+    if department_id and dev_dept and not is_dept_compatible(dev_dept, department_id, dev_dept_name):
+        db.close()
+        return jsonify({
+            'success': False,
+            'errorType': 'DEPARTMENT_MISMATCH',
+            'message': f'❌ อุปกรณ์ [{device["custom_sn"]}] สังกัดตู้แผนก "{dev_dept_name}" ไม่สามารถทำรายการที่ตู้ "{department_id}" ได้ (เครื่องไม่ได้อยู่ในตู้นี้)'
+        }), 400
+
+    txn_dept = department_id or dev_dept or 'OBD A'
 
     target_action = action
     if action == 'AUTO':
@@ -925,7 +953,18 @@ def scan_batch():
                 continue
 
             device = dict(device)
-            item_dept = department_id or device.get('department_id') or 'OBD A'
+            dev_dept = device.get('department_id') or ''
+            dev_dept_name = device.get('department_name') or dev_dept
+
+            # Department validation: device MUST belong to this cabinet's department!
+            if department_id and dev_dept and not is_dept_compatible(dev_dept, department_id, dev_dept_name):
+                errors.append({
+                    'code': code,
+                    'message': f'❌ อุปกรณ์ [{device["custom_sn"]}] สังกัดตู้แผนก "{dev_dept_name}" ไม่สามารถทำรายการที่ตู้ "{department_id}" ได้ (เครื่องไม่ได้อยู่ในตู้นี้)'
+                })
+                continue
+
+            item_dept = department_id or dev_dept or 'OBD A'
 
             if action == 'CHECK_OUT':
                 if device['status'] == 'CHECKED_OUT':

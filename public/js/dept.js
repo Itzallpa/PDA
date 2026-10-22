@@ -29,12 +29,16 @@ function normalizeDeptCode(s) {
   return (s || '').replace(/[\s\-_]+/g, '').toUpperCase();
 }
 
-function isDepartmentCompatible(d1, d2) {
+function isDepartmentCompatible(d1, d2, devDeptName = '') {
   if (!d1 || !d2) return true;
   const n1 = normalizeDeptCode(d1);
   const n2 = normalizeDeptCode(d2);
   if (n1 === n2) return true;
   if (n1.startsWith(n2) || n2.startsWith(n1)) return true;
+  if (devDeptName) {
+    const nName = normalizeDeptCode(devDeptName);
+    if (nName === n2 || nName.startsWith(n2) || n2.startsWith(nName)) return true;
+  }
   return false;
 }
 
@@ -619,9 +623,28 @@ async function addSinglePdaToBatch(code) {
 
     const device = data.device;
 
-    // Tolerant department handling - Allow scanning any device smoothly across cabinets
-    if (device.department_id && currentDeptId && !isDepartmentCompatible(device.department_id, currentDeptId)) {
-      device.assigned_dept_notice = device.department_id;
+    // Strict Department Validation:
+    // Device MUST belong to this cabinet's department!
+    // Reject scanning foreign devices that do not belong to this cabinet.
+    const devDeptName = device.department_name || device.department_id;
+    if (device.department_id && currentDeptId && !isDepartmentCompatible(device.department_id, currentDeptId, devDeptName)) {
+      if (window.soundManager) window.soundManager.playError();
+      scannerBox.classList.remove('flash-success');
+      scannerBox.classList.add('flash-error');
+      setTimeout(() => scannerBox.classList.remove('flash-error'), 800);
+
+      showFeedback('error', `
+        <div style="font-size: 1.05rem; font-weight: 700; color: #dc2626; margin-bottom: 0.35rem;">
+          ❌ อุปกรณ์ [${device.custom_sn || device.original_sn}] สังกัดตู้แผนก "${devDeptName}"
+        </div>
+        <div style="font-size: 0.88rem; color: #7f1d1d; margin-bottom: 0.45rem; line-height: 1.4;">
+          เครื่องนี้ไม่ได้ผูกไว้กับตู้ของแผนก <strong>[${currentDeptId}]</strong> จึงไม่สามารถเบิกออกหรือคืนที่ตู้นี้ได้!
+        </div>
+        <div style="font-size: 0.82rem; color: #991b1b; background: #fee2e2; border: 1px solid #fca5a5; padding: 0.4rem 0.65rem; border-radius: 6px;">
+          👉 กรุณานำ PDA เครื่องนี้ไปสแกนทำรายการที่ <strong>หน้าตู้ประจำแผนก ${devDeptName}</strong>
+        </div>
+      `);
+      return false;
     }
 
     // Status Validations with Actionable Guidance

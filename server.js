@@ -262,6 +262,26 @@ app.post('/api/admin/change-password', (req, res) => {
 });
 
 // -------------------------------------------------------------
+// Helper: Department Code Normalizer & Matcher
+// -------------------------------------------------------------
+function normalizeDeptCode(s) {
+  return (s || '').replace(/[\s\-_]+/g, '').toUpperCase();
+}
+
+function isDepartmentCompatible(d1, d2, devDeptName = '') {
+  if (!d1 || !d2) return true;
+  const n1 = normalizeDeptCode(d1);
+  const n2 = normalizeDeptCode(d2);
+  if (n1 === n2) return true;
+  if (n1.startsWith(n2) || n2.startsWith(n1)) return true;
+  if (devDeptName) {
+    const nName = normalizeDeptCode(devDeptName);
+    if (nName === n2 || nName.startsWith(n2) || n2.startsWith(nName)) return true;
+  }
+  return false;
+}
+
+// -------------------------------------------------------------
 // API Endpoints
 // -------------------------------------------------------------
 
@@ -746,8 +766,19 @@ app.post('/api/scan', (req, res) => {
         message: `❌ ไม่พบ PDA รหัส "${code}" ในระบบฐานข้อมูล (กรุณาตรวจสอบว่าลงทะเบียนเครื่องแล้วหรือยัง)`
       });
     }
+ 
+    // Department validation: device MUST belong to this cabinet's department!
+    const devDept = device.department_id || '';
+    const devDeptName = device.department_name || devDept;
+    if (department_id && devDept && !isDepartmentCompatible(devDept, department_id, devDeptName)) {
+      return res.status(400).json({
+        success: false,
+        errorType: 'DEPARTMENT_MISMATCH',
+        message: `❌ อุปกรณ์ [${device.custom_sn}] สังกัดตู้แผนก "${devDeptName}" ไม่สามารถทำรายการที่ตู้ "${department_id}" ได้ (เครื่องไม่ได้อยู่ในตู้นี้)`
+      });
+    }
 
-    const txnDept = department_id || device.department_id || 'OBD A';
+    const txnDept = department_id || devDept || 'OBD A';
 
     // 3. Determine actual operation if AUTO
     let targetAction = action;
@@ -929,7 +960,18 @@ app.post('/api/scan/batch', (req, res) => {
           continue;
         }
 
-        const itemDept = department_id || device.department_id || 'OBD A';
+        // Department validation: device MUST belong to this cabinet's department!
+        const devDept = device.department_id || '';
+        const devDeptName = device.department_name || devDept;
+        if (department_id && devDept && !isDepartmentCompatible(devDept, department_id, devDeptName)) {
+          errors.push({
+            code,
+            message: `❌ อุปกรณ์ [${device.custom_sn}] สังกัดตู้แผนก "${devDeptName}" ไม่สามารถทำรายการที่ตู้ "${department_id}" ได้ (เครื่องไม่ได้อยู่ในตู้นี้)`
+          });
+          continue;
+        }
+
+        const itemDept = department_id || devDept || 'OBD A';
 
         if (action === 'CHECK_OUT') {
           if (device.status === 'CHECKED_OUT') {
