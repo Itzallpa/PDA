@@ -827,6 +827,12 @@ def scan_device():
     device = cur.fetchone()
 
     if not device:
+        note_msg = f'ยิงเครื่องไม่พบในระบบ: สแกนรหัส "{code}" ที่ตู้ [{department_id}]'
+        cur.execute('''
+            INSERT INTO logs (device_id, original_sn, custom_sn, department_id, action, staff_id, timestamp, notes)
+            VALUES (?, ?, ?, ?, 'Abnormal', ?, datetime('now', 'localtime'), ?)
+        ''', (None, code, code, department_id, staff_id or 'UNKNOWN', note_msg))
+        db.commit()
         db.close()
         return jsonify({'success': False, 'errorType': 'DEVICE_NOT_FOUND', 'message': f'❌ ไม่พบ PDA รหัส "{code}" ในระบบฐานข้อมูล'}), 404
 
@@ -974,6 +980,11 @@ def scan_batch():
             ''', (code, code))
             device = cur.fetchone()
             if not device:
+                note_msg = f'ยิงเครื่องไม่พบในระบบ: สแกนรหัส "{code}" ที่ตู้ [{department_id}]'
+                cur.execute('''
+                    INSERT INTO logs (device_id, original_sn, custom_sn, department_id, action, staff_id, timestamp, notes)
+                    VALUES (?, ?, ?, ?, 'Abnormal', ?, datetime('now', 'localtime'), ?)
+                ''', (None, code, code, department_id, staff_id or 'UNKNOWN', note_msg))
                 errors.append({'code': code, 'message': f'ไม่พบอุปกรณ์รหัส "{code}" ในระบบ'})
                 continue
 
@@ -1127,7 +1138,7 @@ def get_logs():
         params.append(department)
 
     if action and action != 'ALL':
-        query += ' AND l.action = ?'
+        query += ' AND UPPER(l.action) = UPPER(?)'
         params.append(action)
 
     if search and search.strip():

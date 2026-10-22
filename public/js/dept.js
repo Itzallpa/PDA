@@ -497,11 +497,7 @@ function setupScanInputListeners() {
 function handleAddPdaButtonClick() {
   const pdaInput = document.getElementById('input-pda-code');
   clearTimeout(autoAddTimeout);
-  let val = pdaInput.value.trim();
-  if (!val) {
-    val = prompt('กรอกรหัส PDA (Custom SN เช่น OB01, ad001 หรือ Serial Number) เพื่อทดสอบ/ทำรายการ:') || '';
-    val = val.trim();
-  }
+  const val = pdaInput.value.trim();
   if (val) {
     pdaInput.value = '';
     processInputCodes(val);
@@ -641,44 +637,30 @@ async function addSinglePdaToBatch(code) {
     const data = await res.json();
 
     if (!data.success || !data.device) {
-      // If code was not found as a device, check if staff ID is empty
-      // If so, the user likely scanned their staff ID card into the scanner!
-      if (!staffInput.value.trim() && cleanCode.length >= 3 && currentMode === 'CHECK_OUT') {
-        staffInput.value = cleanCode;
-        const btnClearStaff = document.getElementById('btn-clear-staff');
-        if (btnClearStaff) btnClearStaff.style.display = 'inline';
-        if (window.soundManager) window.soundManager.playBeep();
-
-        if (currentBatchDevices.length > 0) {
-          // If there are already PDAs queued, submit now!
-          submitBatchOrSingle();
-          return false;
-        }
-
-        showFeedback('success', `👤 บันทึกรหัสพนักงาน: <strong>${cleanCode}</strong> เรียบร้อยแล้ว 👉 สแกนรหัส PDA ต่อได้เลย`);
-        pdaInput.focus();
-        return false;
-      }
-
       if (window.soundManager) window.soundManager.playError();
       scannerBox.classList.remove('flash-success');
       scannerBox.classList.add('flash-error');
       setTimeout(() => scannerBox.classList.remove('flash-error'), 800);
 
-      // Record Abnormal log for unregistered/unknown barcode
+      // Record Abnormal log for unregistered/unknown barcode immediately
       const staffVal = staffInput.value.trim() || 'UNKNOWN';
-      fetch('/api/logs/abnormal', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          code: cleanCode,
-          original_sn: cleanCode,
-          custom_sn: cleanCode,
-          department_id: currentDeptId || 'UNKNOWN',
-          staff_id: staffVal,
-          notes: `ยิงเครื่องไม่พบในระบบ: สแกนรหัส "${cleanCode}" ที่ตู้ [${currentDeptId || 'UNKNOWN'}]`
-        })
-      }).catch(err => console.error('Error logging abnormal scan:', err));
+      try {
+        await fetch('/api/logs/abnormal', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            code: cleanCode,
+            original_sn: cleanCode,
+            custom_sn: cleanCode,
+            department_id: currentDeptId || 'UNKNOWN',
+            staff_id: staffVal,
+            notes: `ยิงเครื่องไม่พบในระบบ: สแกนรหัส "${cleanCode}" ที่ตู้ [${currentDeptId || 'UNKNOWN'}]`
+          })
+        });
+        localStorage.setItem('pda_abnormal_updated', Date.now().toString());
+      } catch (err) {
+        console.error('Error logging abnormal scan:', err);
+      }
 
       showFeedback('error', `
         <div style="display: inline-block; background: #dc2626; color: #fff; font-size: 0.82rem; font-weight: 800; padding: 0.25rem 0.75rem; border-radius: 9999px; margin-bottom: 0.6rem; letter-spacing: 0.05em; box-shadow: 0 2px 4px rgba(220,38,38,0.25);">
@@ -719,18 +701,23 @@ async function addSinglePdaToBatch(code) {
       // Record Abnormal log to backend immediately
       const modeLabel = currentMode === 'CHECK_OUT' ? 'เบิกออก' : 'คืนเข้าตู้';
       const staffVal = staffInput.value.trim() || 'UNKNOWN';
-      fetch('/api/logs/abnormal', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          device_id: device.id,
-          original_sn: device.original_sn,
-          custom_sn: device.custom_sn,
-          department_id: currentDeptId,
-          staff_id: staffVal,
-          notes: `ยิงผิดตู้: เครื่องสังกัดตู้ [${device.department_id} - ${devDeptName}] ถูกนำมายิงที่ตู้ [${currentDeptId}] (โหมด${modeLabel})`
-        })
-      }).catch(err => console.error('Error logging abnormal scan:', err));
+      try {
+        await fetch('/api/logs/abnormal', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            device_id: device.id,
+            original_sn: device.original_sn,
+            custom_sn: device.custom_sn,
+            department_id: currentDeptId,
+            staff_id: staffVal,
+            notes: `ยิงผิดตู้: เครื่องสังกัดตู้ [${device.department_id} - ${devDeptName}] ถูกนำมายิงที่ตู้ [${currentDeptId}] (โหมด${modeLabel})`
+          })
+        });
+        localStorage.setItem('pda_abnormal_updated', Date.now().toString());
+      } catch (err) {
+        console.error('Error logging abnormal scan:', err);
+      }
 
       showFeedback('error', `
         <div style="display: inline-block; background: #dc2626; color: #fff; font-size: 0.82rem; font-weight: 800; padding: 0.25rem 0.75rem; border-radius: 9999px; margin-bottom: 0.6rem; letter-spacing: 0.05em; box-shadow: 0 2px 4px rgba(220,38,38,0.25);">
@@ -980,6 +967,9 @@ async function submitBatchOrSingle() {
     const data = await res.json();
 
     if (data.success) {
+      // Notify other tabs (like Admin Log page)
+      localStorage.setItem('pda_data_updated', Date.now().toString());
+
       // Success feedback
       if (window.soundManager) window.soundManager.playSuccess();
       scannerBox.classList.remove('flash-error');
@@ -1006,6 +996,7 @@ async function submitBatchOrSingle() {
       pdaInput.value = '';
       pdaInput.focus();
     } else {
+      localStorage.setItem('pda_abnormal_updated', Date.now().toString());
       if (window.soundManager) window.soundManager.playError();
       scannerBox.classList.remove('flash-success');
       scannerBox.classList.add('flash-error');

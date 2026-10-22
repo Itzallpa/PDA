@@ -434,12 +434,24 @@ document.addEventListener('DOMContentLoaded', async () => {
     refreshData();
   }
 
-  // Auto-refresh every 5 seconds to catch scans from kiosks (only when authenticated)
+  // Auto-refresh every 2.5 seconds to catch scans from kiosks (only when authenticated)
   setInterval(() => {
     if (adminAuthToken) {
       refreshDataSilently();
     }
-  }, 5000);
+  }, 2500);
+
+  // Instant cross-tab real-time sync when a kiosk logs a scan or abnormal event
+  window.addEventListener('storage', (e) => {
+    if (e.key === 'pda_abnormal_updated' || e.key === 'pda_data_updated') {
+      fetchStats(true);
+      fetchDevices(true);
+      const logsSec = document.getElementById('section-logs');
+      if (logsSec && logsSec.style.display !== 'none') {
+        fetchLogs();
+      }
+    }
+  });
 
   const scanInput = document.getElementById('sticker-quick-scan-input');
   if (scanInput) {
@@ -466,7 +478,13 @@ async function loadDepartmentsPublic() {
 
 async function refreshData() {
   try {
-    await Promise.all([fetchStats(), fetchDevices()]);
+    const logsSec = document.getElementById('section-logs');
+    const isLogsVisible = logsSec && logsSec.style.display !== 'none';
+    const promises = [fetchStats(), fetchDevices()];
+    if (isLogsVisible) {
+      promises.push(fetchLogs());
+    }
+    await Promise.all(promises);
   } catch (err) {
     console.error('Error refreshing data:', err);
   }
@@ -477,7 +495,13 @@ async function refreshDataSilently() {
   const modalsOpen = document.querySelectorAll('.modal-overlay.open').length > 0;
   if (!modalsOpen) {
     try {
-      await Promise.all([fetchStats(true), fetchDevices(true)]);
+      const logsSec = document.getElementById('section-logs');
+      const isLogsVisible = logsSec && logsSec.style.display !== 'none';
+      const promises = [fetchStats(true), fetchDevices(true)];
+      if (isLogsVisible) {
+        promises.push(fetchLogs());
+      }
+      await Promise.all(promises);
     } catch (err) {
       console.warn('Silent refresh error:', err);
     }
@@ -1290,6 +1314,7 @@ function switchMainTab(tab) {
     logsSec.style.display = 'block';
     navLinks[1].classList.add('active');
     syncLogPillsWithSelect();
+    fetchStats(true);
     fetchLogs();
   }
 }

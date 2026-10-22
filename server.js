@@ -782,6 +782,19 @@ app.post('/api/scan', (req, res) => {
     `).get(code, code);
 
     if (!device) {
+      const noteMsg = `ยิงเครื่องไม่พบในระบบ: สแกนรหัส "${code}" ที่ตู้ [${department_id}]`;
+      db.prepare(`
+        INSERT INTO logs (device_id, original_sn, custom_sn, department_id, action, staff_id, timestamp, notes)
+        VALUES (?, ?, ?, ?, 'Abnormal', ?, datetime('now', 'localtime'), ?)
+      `).run(
+        null,
+        code,
+        code,
+        department_id,
+        staff_id || 'UNKNOWN',
+        noteMsg
+      );
+
       return res.status(404).json({
         success: false,
         errorType: 'DEVICE_NOT_FOUND',
@@ -991,6 +1004,16 @@ app.post('/api/scan/batch', (req, res) => {
 
         const device = findStmt.get(code, code);
         if (!device) {
+          const noteMsg = `ยิงเครื่องไม่พบในระบบ: สแกนรหัส "${code}" ที่ตู้ [${department_id}]`;
+          insertLogStmt.run(
+            null,
+            code,
+            code,
+            department_id,
+            'Abnormal',
+            staff_id || 'UNKNOWN'
+          );
+          db.prepare('UPDATE logs SET notes = ? WHERE id = last_insert_rowid()').run(noteMsg);
           errors.push({ code, message: `ไม่พบอุปกรณ์รหัส "${code}" ในระบบ` });
           continue;
         }
@@ -1124,7 +1147,7 @@ app.get('/api/logs', (req, res) => {
       params.push(department);
     }
     if (action && action !== 'ALL') {
-      query += ' AND l.action = ?';
+      query += ' AND UPPER(l.action) = UPPER(?)';
       params.push(action);
     }
     if (search && search.trim() !== '') {
@@ -1146,7 +1169,7 @@ app.get('/api/logs', (req, res) => {
       countParams.push(department);
     }
     if (action && action !== 'ALL') {
-      countQuery += ' AND l.action = ?';
+      countQuery += ' AND UPPER(l.action) = UPPER(?)';
       countParams.push(action);
     }
     if (search && search.trim() !== '') {
