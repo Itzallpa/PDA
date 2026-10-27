@@ -17,6 +17,10 @@ if %ERRORLEVEL% neq 0 (
   exit /b 1
 )
 
+:: Kill any lingering ngrok process to prevent ERR_NGROK_334 (already online)
+taskkill /F /IM ngrok.exe >nul 2>nul
+timeout /t 1 /nobreak >nul
+
 :: Check for .env file
 set NGROK_DOMAIN=
 if exist .env (
