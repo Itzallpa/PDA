@@ -3,7 +3,22 @@ import cors from 'cors';
 import path from 'path';
 import fs from 'fs';
 import { fileURLToPath } from 'url';
-import { DatabaseSync } from 'node:sqlite';
+let DatabaseSync;
+try {
+  const sqliteModule = await import('node:sqlite');
+  DatabaseSync = sqliteModule.DatabaseSync;
+} catch (err) {
+  if (err.code === 'ERR_UNKNOWN_BUILTIN_MODULE') {
+    const { spawn } = await import('child_process');
+    const child = spawn(process.execPath, ['--experimental-sqlite', ...process.argv.slice(1)], {
+      stdio: 'inherit',
+      env: process.env
+    });
+    child.on('exit', (code) => process.exit(code ?? 0));
+    await new Promise(() => {});
+  }
+  throw err;
+}
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
