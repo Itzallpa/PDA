@@ -25,6 +25,8 @@ __pycache__/
 
 # Environment & OS files
 .env
+*.env.txt
+.env.*
 .DS_Store
 Thumbs.db
 scratch/

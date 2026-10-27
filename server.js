@@ -4,22 +4,7 @@ import path from 'path';
 import fs from 'fs';
 import crypto from 'crypto';
 import { fileURLToPath } from 'url';
-let DatabaseSync;
-try {
-  const sqliteModule = await import('node:sqlite');
-  DatabaseSync = sqliteModule.DatabaseSync;
-} catch (err) {
-  if (err.code === 'ERR_UNKNOWN_BUILTIN_MODULE') {
-    const { spawn } = await import('child_process');
-    const child = spawn(process.execPath, ['--experimental-sqlite', ...process.argv.slice(1)], {
-      stdio: 'inherit',
-      env: process.env
-    });
-    child.on('exit', (code) => process.exit(code ?? 0));
-    await new Promise(() => {});
-  }
-  throw err;
-}
+import { DatabaseSync } from 'node:sqlite';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
