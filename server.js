@@ -2,6 +2,7 @@ import express from 'express';
 import cors from 'cors';
 import path from 'path';
 import fs from 'fs';
+import crypto from 'crypto';
 import { fileURLToPath } from 'url';
 let DatabaseSync;
 try {
@@ -1278,6 +1279,13 @@ app.get('/api/logs/export', (req, res) => {
 // Dynamic route for departments: e.g. /dept/IB -> serves dept.html
 app.get('/dept/:deptId', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'dept.html'));
+});
+
+// JSON Error Handler (Prevents HTML 500 error pages from breaking fetch JSON parsing)
+app.use((err, req, res, next) => {
+  console.error('API Error:', err);
+  if (res.headersSent) return next(err);
+  res.status(500).json({ success: false, message: err.message || 'Server Internal Error' });
 });
 
 // Start Server
