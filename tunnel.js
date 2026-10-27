@@ -2,10 +2,12 @@
 import { spawn } from 'child_process';
 import http from 'http';
 import fs from 'fs';
+import os from 'os';
+import path from 'path';
 
 const LOCAL_PORT = process.env.PORT || 5001;
 const SUBDOMAIN = process.env.SUBDOMAIN || 'SOCN-PDA';
-const SSH_KEY = 'C:\\Users\\SPXTH71637\\.ssh\\id_ed25519';
+const SSH_KEY = path.join(os.homedir(), '.ssh', 'id_ed25519');
 const PING_INTERVAL_MS = 30 * 1000; // Ping every 30 seconds to keep Serveo 100% active
 const RECONNECT_DELAY_MS = 3000;
 
