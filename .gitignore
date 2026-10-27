@@ -27,6 +27,7 @@ __pycache__/
 .env
 *.env.txt
 .env.*
+*token*.txt
 .DS_Store
 Thumbs.db
 scratch/

@@ -5,6 +5,7 @@ import fs from 'fs';
 import crypto from 'crypto';
 import { fileURLToPath } from 'url';
 import { DatabaseSync } from 'node:sqlite';
+import { syncFromTurso, attachTursoSync } from './db_cloud.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -71,6 +72,10 @@ db.exec(`
 try {
   db.exec('ALTER TABLE logs ADD COLUMN owner_department_id TEXT');
 } catch (e) {}
+
+// Sync data from Turso Cloud on startup, then attach real-time mirror
+await syncFromTurso(db);
+attachTursoSync(db);
 
 // Pre-populate departments if empty
 const deptCount = db.prepare('SELECT COUNT(*) as count FROM departments').get().count;
