@@ -738,24 +738,6 @@ app.delete('/api/devices/:id', (req, res) => {
   }
 });
 
-function normalizeDept(s) {
-  return (s || '').replace(/[\s\-_]+/g, '').toUpperCase();
-}
-
-function isDepartmentCompatible(d1, d2, devDeptName = '') {
-  if (!d1 || !d2) return true;
-  const c1 = normalizeDept(decodeURIComponent(d1));
-  const c2 = normalizeDept(decodeURIComponent(d2));
-  if (c1 === c2) return true;
-  if (devDeptName) {
-    const nName = normalizeDept(decodeURIComponent(devDeptName));
-    if (nName === c2) return true;
-  }
-  return false;
-}
-
-const isDeptComp = isDepartmentCompatible;
-
 // -------------------------------------------------------------
 // Core Business Flow: Check-in / Check-out Scanner Endpoint
 // -------------------------------------------------------------
