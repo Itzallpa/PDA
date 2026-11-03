@@ -390,6 +390,28 @@ def get_stats():
     cur.execute("SELECT COUNT(*) as count FROM devices WHERE status = 'CHECKED_OUT'")
     checked_out = cur.fetchone()['count']
 
+    # Overdue check: devices checked out for more than 3 days
+    cur.execute("""
+        SELECT COUNT(*) as count 
+        FROM devices 
+        WHERE status = 'CHECKED_OUT' 
+          AND last_action_at IS NOT NULL 
+          AND (julianday('now', 'localtime') - julianday(last_action_at)) >= 3
+    """)
+    overdue_count = cur.fetchone()['count']
+
+    cur.execute("""
+        SELECT dev.*, d.name as department_name, d.description as department_desc,
+               ROUND(julianday('now', 'localtime') - julianday(dev.last_action_at), 2) as days_out
+        FROM devices dev
+        LEFT JOIN departments d ON dev.department_id = d.id
+        WHERE dev.status = 'CHECKED_OUT'
+          AND dev.last_action_at IS NOT NULL
+          AND (julianday('now', 'localtime') - julianday(dev.last_action_at)) >= 3
+        ORDER BY days_out DESC
+    """)
+    overdue_devices = [dict(r) for r in cur.fetchall()]
+
     cur.execute("SELECT COUNT(*) as count FROM logs WHERE LOWER(action) = 'abnormal'")
     abnormal_count = cur.fetchone()['count']
 
@@ -407,7 +429,8 @@ def get_stats():
             d.id, d.name, d.description,
             COUNT(dev.id) as total_devices,
             SUM(CASE WHEN dev.status = 'IN_CABINET' THEN 1 ELSE 0 END) as in_cabinet,
-            SUM(CASE WHEN dev.status = 'CHECKED_OUT' THEN 1 ELSE 0 END) as checked_out
+            SUM(CASE WHEN dev.status = 'CHECKED_OUT' THEN 1 ELSE 0 END) as checked_out,
+            SUM(CASE WHEN dev.status = 'CHECKED_OUT' AND dev.last_action_at IS NOT NULL AND (julianday('now', 'localtime') - julianday(dev.last_action_at)) >= 3 THEN 1 ELSE 0 END) as overdue_3d
         FROM departments d
         LEFT JOIN devices dev ON d.id = dev.department_id
         GROUP BY d.id
@@ -422,6 +445,8 @@ def get_stats():
             'total': total_devices,
             'inCabinet': in_cabinet,
             'checkedOut': checked_out,
+            'overdueCount': overdue_count,
+            'overdueDevices': overdue_devices,
             'abnormalCount': abnormal_count,
             'recentAbnormals': recent_abnormals,
             'departments': dept_stats
@@ -507,7 +532,8 @@ def get_devices():
     search = request.args.get('search')
 
     query = '''
-        SELECT dev.*, d.name as department_name 
+        SELECT dev.*, d.name as department_name,
+               ROUND(julianday('now', 'localtime') - julianday(dev.last_action_at), 2) as days_since_action
         FROM devices dev
         JOIN departments d ON dev.department_id = d.id
         WHERE 1=1
@@ -526,8 +552,11 @@ def get_devices():
         params.extend([department, dept_clean, f'{dept_clean}%', dept_clean])
 
     if status and status != 'ALL':
-        query += ' AND dev.status = ?'
-        params.append(status)
+        if status == 'OVERDUE_3D':
+            query += " AND dev.status = 'CHECKED_OUT' AND dev.last_action_at IS NOT NULL AND (julianday('now', 'localtime') - julianday(dev.last_action_at)) >= 3"
+        else:
+            query += ' AND dev.status = ?'
+            params.append(status)
 
     if search and search.strip():
         s = f"%{search.strip()}%"

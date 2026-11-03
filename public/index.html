@@ -4,6 +4,9 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>PDA Storage Center - แดชบอร์ดตู้จัดเก็บ PDA กลาง</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Prompt:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/css/style.css">
   <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>⚡</text></svg>">
 </head>
@@ -65,8 +68,9 @@
       </a>
 
       <nav class="nav-links">
-        <a href="#matrix-view" class="nav-link active" onclick="switchMainTab('matrix')">ตู้จัดเก็บ</a>
-        <a href="#logs-view" class="nav-link" onclick="switchMainTab('logs')">ประวัติการเบิก-คืน</a>
+        <a href="#dashboard-view" class="nav-link active" onclick="switchMainTab('dashboard')">📊 แดชบอร์ด</a>
+        <a href="#matrix-view" class="nav-link" onclick="switchMainTab('matrix')">🗄️ ตู้จัดเก็บ</a>
+        <a href="#logs-view" class="nav-link" onclick="switchMainTab('logs')">📋 ประวัติการเบิก-คืน</a>
         <button class="btn-secondary" onclick="openAddDeptModal()" title="เพิ่มตู้จัดเก็บประจำแผนกใหม่">➕ เพิ่มตู้/แผนก</button>
         <button class="btn-secondary" onclick="openImportModal()">นำเข้าไฟล์ SN</button>
         <button class="nav-btn" onclick="openAddDeviceModal()">+ เพิ่ม PDA</button>
@@ -79,44 +83,204 @@
 
     <!-- KPI Statistics Strip -->
     <section class="stats-grid">
-      <div class="stat-card">
+      <div class="stat-card" style="cursor: pointer;" onclick="filterDeptAndStatus('ALL', 'ALL')" title="คลิกเพื่อดูรายชื่อ PDA ทั้งหมดในตาราง">
+        <div class="stat-card-header">
+          <span class="stat-card-label">PDA ทั้งหมด</span>
+          <div class="stat-card-icon icon-total">📱</div>
+        </div>
         <div class="stat-info">
-          <span>PDA ทั้งหมด</span>
           <h2 id="kpi-total">0</h2>
+          <span class="stat-card-sub">อุปกรณ์ทั้งหมดในระบบ</span>
         </div>
       </div>
 
-      <div class="stat-card">
+      <div class="stat-card" style="cursor: pointer;" onclick="filterDeptAndStatus('ALL', 'IN_CABINET')" title="คลิกเพื่อกรองดูอุปกรณ์ที่อยู่ในตู้ในตาราง">
+        <div class="stat-card-header">
+          <span class="stat-card-label">อยู่ในตู้ (พร้อมใช้)</span>
+          <div class="stat-card-icon icon-in">🟢</div>
+        </div>
         <div class="stat-info">
-          <span>ในตู้ชาร์จ</span>
           <h2 id="kpi-in-cabinet" style="color: var(--green);">0</h2>
+          <span class="stat-card-sub" style="color: #166534;">พร้อมเบิกใช้งานทันที</span>
         </div>
       </div>
 
-      <div class="stat-card">
+      <div class="stat-card" style="cursor: pointer;" onclick="filterDeptAndStatus('ALL', 'CHECKED_OUT')" title="คลิกเพื่อกรองดูอุปกรณ์ที่เบิกไปใช้งานในตาราง">
+        <div class="stat-card-header">
+          <span class="stat-card-label">ไม่อยู่ (เบิกใช้งาน)</span>
+          <div class="stat-card-icon icon-out">🔴</div>
+        </div>
         <div class="stat-info">
-          <span>เบิกไปใช้งาน</span>
           <h2 id="kpi-checked-out" style="color: var(--red);">0</h2>
+          <span class="stat-card-sub" style="color: #991b1b;">ถูกเบิกออกไปใช้งาน</span>
+        </div>
+      </div>
+
+      <div class="stat-card stat-card-alert" id="kpi-card-overdue" style="cursor: pointer;" onclick="filterDeptAndStatus('ALL', 'OVERDUE_3D')" title="คลิกเพื่อดูอุปกรณ์ที่ค้างเกิน 3 วันในตาราง">
+        <div class="stat-card-header">
+          <span class="stat-card-label" style="color: #b91c1c; font-weight: 700;">ไม่ได้เก็บเกิน 3 วัน</span>
+          <div class="stat-card-icon icon-alert">🚨</div>
+        </div>
+        <div class="stat-info">
+          <h2 id="kpi-overdue" style="color: #dc2626;">0</h2>
+          <span class="stat-card-sub" style="color: #b91c1c; font-weight: 600;">⚠️ ต้องติดตามด่วน</span>
         </div>
       </div>
 
       <div class="stat-card">
+        <div class="stat-card-header">
+          <span class="stat-card-label">ตู้จัดเก็บ</span>
+          <div class="stat-card-icon icon-dept">🏢</div>
+        </div>
         <div class="stat-info">
-          <span>ตู้จัดเก็บ</span>
           <h2 id="kpi-depts">7 แผนก</h2>
+          <span class="stat-card-sub">จุดบริการตู้ทั้งหมด</span>
         </div>
       </div>
 
-      <div class="stat-card" id="kpi-card-abnormal" style="border-left: 4px solid #dc2626; cursor: pointer;" onclick="filterLogByAction('Abnormal')" title="คลิกเพื่อดูรายการผิดปกติ (Abnormal) ทั้งหมด">
+      <div class="stat-card stat-card-warning" id="kpi-card-abnormal" style="cursor: pointer;" onclick="filterLogByAction('Abnormal')" title="คลิกเพื่อดูรายการผิดปกติ (Abnormal) ทั้งหมด">
+        <div class="stat-card-header">
+          <span class="stat-card-label">ประวัติผิดปกติ</span>
+          <div class="stat-card-icon icon-warn">⚠️</div>
+        </div>
         <div class="stat-info">
-          <span>⚠️ รายการผิดปกติ</span>
-          <h2 id="kpi-abnormal" style="color: #dc2626;">0</h2>
+          <h2 id="kpi-abnormal" style="color: #ea580c;">0</h2>
+          <span class="stat-card-sub" style="color: #c2410c;">ยิงผิดตู้ / ผิดเงื่อนไข</span>
         </div>
       </div>
     </section>
 
+    <!-- Main View 0: Comprehensive Dashboard (หน้าแดชบอร์ด) -->
+    <div id="section-dashboard">
+      <!-- Header Actions -->
+      <div class="dashboard-header-bar">
+        <div>
+          <h2 class="dashboard-title">📊 ภาพรวมสถานะจัดเก็บ PDA กลาง</h2>
+          <p class="dashboard-subtitle">ตรวจสอบสถานะแบบเรียลไทม์: เครื่องที่อยู่ในตู้ (🟢) หรือเบิกใช้งาน (🔴) พร้อมระบบตรวจจับอุปกรณ์ที่ไม่ได้นำมาเก็บเกิน 3 วัน</p>
+        </div>
+        <div class="dashboard-actions">
+          <button type="button" class="btn-jump-inventory" onclick="scrollToInventory()">
+            <span>📋</span> ดูรายการอุปกรณ์ (อยู่/ไม่อยู่) ↓
+          </button>
+          <button class="btn-secondary" onclick="refreshData()">
+            <span>🔄</span> รีเฟรชข้อมูล
+          </button>
+          <button class="btn-primary" onclick="exportDashboardCsv()">
+            <span>📥</span> ดาวน์โหลด Excel / CSV
+          </button>
+        </div>
+      </div>
+
+      <!-- Quick View Switcher Anchors -->
+      <div class="dashboard-view-switcher">
+        <a href="#dashboard-dept-section" class="switcher-pill active" onclick="event.preventDefault(); document.getElementById('dashboard-dept-section').scrollIntoView({behavior: 'smooth'})">
+          🏢 สรุปสถานะแยก 13 แผนก
+        </a>
+        <a href="#dashboard-inventory-section" class="switcher-pill" onclick="event.preventDefault(); scrollToInventory()">
+          📱 รายการอุปกรณ์รายเครื่อง (อยู่ / ไม่อยู่ 346 เครื่อง) ↓
+        </a>
+      </div>
+
+      <!-- 1. Urgent Alert: Overdue Devices (> 3 Days Unreturned) -->
+      <div id="overdue-alert-container" class="dashboard-alert-container">
+        <!-- Rendered dynamically by JS: Alert box with table or Success box if 0 -->
+      </div>
+
+      <!-- 2. Department Breakdown & Availability Rate -->
+      <div class="dashboard-card-section" id="dashboard-dept-section">
+        <div class="section-heading">
+          <div class="section-heading-title">
+            <h3>🏢 สรุปสถานะแยกตามตู้จัดเก็บ / แผนก</h3>
+            <p>คลิกที่ช่องตัวเลข 🟢 ในตู้ หรือ 🔴 เบิกใช้ เพื่อดูรายชื่ออุปกรณ์ของแผนกนั้นทันที</p>
+          </div>
+          <span class="badge-neutral" id="dash-dept-total-badge" style="font-family: var(--font-mono); font-size: 0.82rem; background: var(--bg-subtle); border: 1px solid var(--border-default); padding: 0.2rem 0.6rem; border-radius: 4px; font-weight: 600;">-- แผนก</span>
+        </div>
+        
+        <div class="dept-summary-grid" id="dashboard-dept-grid">
+          <!-- Rendered dynamically by JS -->
+        </div>
+      </div>
+
+      <!-- 3. All Devices Live Inventory (อยู่ / ไม่อยู่) -->
+      <div class="dashboard-card-section" id="dashboard-inventory-section">
+        <div class="section-heading">
+          <div class="section-heading-title">
+            <h3>📱 รายการอุปกรณ์ทั้งหมด (Real-Time Device Status)</h3>
+            <p>กรองดูตามสถานะ อยู่ในตู้ (🟢) หรือ ไม่อยู่ (🔴) หรือ ไม่ได้เก็บเกิน 3 วัน (🚨)</p>
+          </div>
+        </div>
+
+        <!-- Active Filter Indicator Banner -->
+        <div id="dash-active-filter-banner" class="active-filter-banner" style="display: none;"></div>
+
+        <!-- Dashboard Filter Pills -->
+        <div class="dashboard-filter-toolbar">
+          <div class="dashboard-status-pills">
+            <button type="button" class="dash-pill active" id="dash-pill-all" onclick="filterDashboardStatus('ALL')">
+              <span>📋 ทั้งหมด</span>
+              <span class="pill-badge" id="dash-badge-all">0</span>
+            </button>
+            <button type="button" class="dash-pill" id="dash-pill-in" onclick="filterDashboardStatus('IN_CABINET')">
+              <span>🟢 อยู่ในตู้</span>
+              <span class="pill-badge green" id="dash-badge-in">0</span>
+            </button>
+            <button type="button" class="dash-pill" id="dash-pill-out" onclick="filterDashboardStatus('CHECKED_OUT')">
+              <span>🔴 ไม่อยู่ / เบิกใช้</span>
+              <span class="pill-badge red" id="dash-badge-out">0</span>
+            </button>
+            <button type="button" class="dash-pill" id="dash-pill-overdue" onclick="filterDashboardStatus('OVERDUE_3D')">
+              <span>🚨 ไม่ได้เก็บเกิน 3 วัน</span>
+              <span class="pill-badge alert" id="dash-badge-overdue">0</span>
+            </button>
+          </div>
+
+          <!-- Secondary Filters: Search & Dept -->
+          <div class="dash-secondary-filters">
+            <div class="search-box" style="flex: 1; min-width: 240px; max-width: 380px;">
+              <span class="search-icon">🔍</span>
+              <input type="text" id="dash-search-input" placeholder="ค้นหารหัสย่อ, SN, รหัสพนักงาน, รุ่น..." oninput="handleDashboardSearch()">
+            </div>
+            <select id="dash-dept-select" class="btn-secondary" onchange="handleDashboardDeptChange(this.value)">
+              <option value="ALL">🏢 ทุกแผนก/ตู้</option>
+              <!-- Dynamic options -->
+            </select>
+          </div>
+        </div>
+
+        <!-- Inventory Table -->
+        <div class="table-responsive">
+          <table class="data-table dashboard-table">
+            <thead>
+              <tr>
+                <th style="width: 45px;">#</th>
+                <th style="width: 140px;">สถานะการจัดเก็บ</th>
+                <th style="width: 110px;">รหัสย่อ (Custom)</th>
+                <th>Original Serial Number</th>
+                <th>ตู้ / แผนก</th>
+                <th>รุ่น (Model)</th>
+                <th>ผู้ถือครอง (Staff ID)</th>
+                <th>เวลาทำรายการล่าสุด</th>
+                <th>ระยะเวลา</th>
+                <th style="text-align: center; width: 150px;">การจัดการ</th>
+              </tr>
+            </thead>
+            <tbody id="dashboard-table-body">
+              <!-- Rendered via JS -->
+            </tbody>
+          </table>
+        </div>
+
+        <!-- Table footer counter -->
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 1rem; font-size: 0.82rem; color: var(--text-muted);">
+          <span id="dash-table-count-text">แสดง 0 รายการ</span>
+          <span>⚡ อัปเดตสถานะอัตโนมัติแบบเรียลไทม์</span>
+        </div>
+      </div>
+
+    </div>
+
     <!-- Main View 1: Cabinets Matrix -->
-    <div id="section-matrix">
+    <div id="section-matrix" style="display: none;">
       <!-- Department Filter Tabs -->
       <div class="dept-tabs-wrapper" id="dept-filter-tabs">
         <button class="dept-tab active" onclick="filterDepartment('ALL')">
@@ -136,8 +300,9 @@
         <div class="action-buttons">
           <select id="status-filter" class="btn-secondary" onchange="handleStatusFilter(this.value)">
             <option value="ALL">ทุกสถานะ</option>
-            <option value="IN_CABINET">ในตู้ชาร์จ</option>
-            <option value="CHECKED_OUT">เบิกใช้งาน</option>
+            <option value="IN_CABINET">🟢 ในตู้ชาร์จ</option>
+            <option value="CHECKED_OUT">🔴 เบิกใช้งาน</option>
+            <option value="OVERDUE_3D">🚨 ค้างเกิน 3 วัน</option>
           </select>
 
           <button class="btn-secondary" onclick="openBatchQrModal()">
@@ -249,6 +414,84 @@
       </div>
     </div>
 
+  </div>
+
+  <!-- MODAL: Quick Device List Popup (Show devices on card / KPI click) -->
+  <div class="modal-overlay" id="device-list-modal" onclick="if(event.target === this) closeModal('device-list-modal')">
+    <div class="modal-card" style="max-width: 1060px; max-height: 88vh; display: flex; flex-direction: column; border-radius: 12px; box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.2), 0 8px 10px -6px rgba(0, 0, 0, 0.1);">
+      <div class="modal-header" style="background: #ffffff; padding: 1.15rem 1.5rem; border-bottom: 1px solid #e2e8f0;">
+        <div style="display: flex; align-items: center; gap: 0.75rem;">
+          <div id="modal-list-icon" style="width: 40px; height: 40px; border-radius: 10px; display: flex; align-items: center; justify-content: center; font-size: 1.3rem; background: #eff6ff;">
+            📦
+          </div>
+          <div>
+            <h3 id="modal-list-title" style="margin: 0; font-size: 1.18rem; font-weight: 700; color: #0f172a;">
+              รายการอุปกรณ์
+            </h3>
+            <p id="modal-list-subtitle" style="margin: 0.15rem 0 0; font-size: 0.85rem; color: #64748b;">
+              แผนก ...
+            </p>
+          </div>
+        </div>
+        <div style="display: flex; align-items: center; gap: 0.75rem;">
+          <div class="search-box" style="min-width: 220px; max-width: 320px;">
+            <span class="search-icon">🔍</span>
+            <input type="text" id="modal-list-search" placeholder="ค้นหารหัสย่อ, SN, ผู้ถือครอง..." oninput="handleModalListSearch()">
+          </div>
+          <button type="button" class="btn-icon" onclick="closeModal('device-list-modal')" title="ปิดหน้าต่าง" style="font-size: 1.25rem; width: 34px; height: 34px;">✕</button>
+        </div>
+      </div>
+
+      <!-- Filter Sub-tabs in Modal -->
+      <div style="padding: 0.65rem 1.5rem; background: #f8fafc; border-bottom: 1px solid #e2e8f0; display: flex; align-items: center; justify-content: space-between; gap: 0.5rem; flex-wrap: wrap;">
+        <div class="dashboard-status-pills" id="modal-filter-pills">
+          <!-- Rendered dynamically e.g. ทั้งหมด, ในตู้, เบิกใช้, ค้างเกิน 3 วัน -->
+        </div>
+        <div id="modal-list-count-badge" style="font-size: 0.85rem; font-weight: 600; color: #475569;">
+          แสดง 0 เครื่อง
+        </div>
+      </div>
+
+      <div class="modal-body" style="padding: 0; flex: 1; overflow-y: auto; background: #ffffff;">
+        <div class="table-responsive">
+          <table class="data-table" style="margin: 0;">
+            <thead>
+              <tr>
+                <th style="width: 45px;">#</th>
+                <th style="width: 140px;">สถานะ</th>
+                <th style="width: 110px;">รหัสย่อ (Custom)</th>
+                <th>Original Serial Number</th>
+                <th>ตู้ / แผนก</th>
+                <th>รุ่น (Model)</th>
+                <th>ผู้ถือครอง (Staff ID)</th>
+                <th>เวลาทำรายการ</th>
+                <th>ระยะเวลา</th>
+                <th style="text-align: center; width: 140px;">การจัดการ</th>
+              </tr>
+            </thead>
+            <tbody id="modal-list-tbody">
+              <!-- Rendered via JS -->
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="modal-footer" style="padding: 0.85rem 1.5rem; background: #f8fafc; justify-content: space-between; border-top: 1px solid #e2e8f0;">
+        <div>
+          <button type="button" class="btn-secondary" onclick="exportModalListCsv()" style="font-size: 0.85rem; font-weight: 600;">
+            📥 ดาวน์โหลด Excel / CSV กลุ่มนี้
+          </button>
+        </div>
+        <div style="display: flex; align-items: center; gap: 0.6rem;">
+          <button type="button" class="btn-secondary" onclick="jumpFromModalToTable()" style="font-size: 0.85rem; color: #2563eb; font-weight: 600;">
+            ดูในตารางใหญ่ด้านล่าง ↓
+          </button>
+          <button type="button" class="btn-primary" onclick="closeModal('device-list-modal')" style="font-size: 0.85rem; padding: 0.45rem 1.1rem;">
+            ปิดหน้าต่าง
+          </button>
+        </div>
+      </div>
+    </div>
   </div>
 
   <!-- MODAL: Add / Edit Device -->
@@ -566,6 +809,9 @@
 
   </div><!-- /admin-main-wrapper -->
 
+  <!-- Global Toast Notification -->
+  <div id="pda-toast"></div>
+
   <!-- SheetJS Excel Library -->
   <script src="/js/xlsx.full.min.js"></script>
   <!-- QR Code library -->
@@ -573,6 +819,6 @@
   <!-- Sound synthesizer -->
   <script src="/js/audio.js"></script>
   <!-- Admin App Logic -->
-  <script src="/js/admin.js?v=2.4.2"></script>
+  <script src="/js/admin.js?v=2.5.0"></script>
 </body>
 </html>

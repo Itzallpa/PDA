@@ -1074,19 +1074,24 @@ function renderLockerDevices(devices) {
 
   container.innerHTML = devices.map(d => {
     const isGreen = d.status === 'IN_CABINET';
+    const t = d.last_action_at ? new Date(d.last_action_at.replace(' ', 'T')).getTime() : 0;
+    const daysOut = (!isGreen && t > 0) ? (Date.now() - t) / (1000 * 60 * 60 * 24) : 0;
+    const isOverdue = !isGreen && (d.days_since_action >= 3 || daysOut >= 3);
+
     return `
-      <div class="locker-item" style="border-left: 3px solid ${isGreen ? 'var(--green)' : 'var(--red)'};">
+      <div class="locker-item" style="border-left: 3px solid ${isGreen ? 'var(--green)' : (isOverdue ? '#dc2626' : 'var(--red)')}; ${isOverdue ? 'background: #fff8f8;' : ''}">
         <div>
           <div class="item-id">
-            <span style="color: ${isGreen ? 'var(--green)' : 'var(--red)'}; font-size: 0.8rem;">●</span>
+            <span style="color: ${isGreen ? 'var(--green)' : (isOverdue ? '#dc2626' : 'var(--red)')}; font-size: 0.8rem;">●</span>
             ${d.custom_sn}
+            ${isOverdue ? `<span style="font-size: 0.68rem; background: #fee2e2; color: #dc2626; border: 1px solid #fca5a5; padding: 0.05rem 0.35rem; border-radius: 4px; font-weight: 700; margin-left: 0.3rem;">🚨 ค้าง >3 วัน</span>` : ''}
           </div>
           <div class="item-orig">SN: ${d.original_sn} (${d.model || 'PDA'})</div>
         </div>
         <div style="text-align: right;">
           ${isGreen 
             ? `<span class="pill-status green" style="font-size: 0.75rem; padding: 0.15rem 0.5rem;">ชาร์จในตู้</span>`
-            : `<div style="font-size: 0.8rem; font-weight: 600; color: var(--red);">👤 ${d.current_staff_id || 'มีผู้เบิก'}</div>
+            : `<div style="font-size: 0.8rem; font-weight: 600; color: ${isOverdue ? '#dc2626' : 'var(--red)'};">👤 ${d.current_staff_id || 'มีผู้เบิก'}</div>
                <div style="font-size: 0.7rem; color: var(--text-muted);">${d.last_action_at ? d.last_action_at.split(' ')[1] : ''}</div>`
           }
         </div>

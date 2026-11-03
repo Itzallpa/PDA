@@ -5,6 +5,55 @@ let currentDeptFilter = 'ALL';
 let currentStatusFilter = 'ALL';
 let currentSearchQuery = '';
 
+// Dashboard Specific State
+let currentMainTab = 'dashboard';
+let dashboardStatusFilter = 'ALL';
+let dashboardDeptFilter = 'ALL';
+let dashboardSearchQuery = '';
+let overdueDevicesList = [];
+
+// Helper: Calculate days elapsed since last action
+function calcDaysOut(lastActionAt) {
+  if (!lastActionAt) return 0;
+  const t = new Date(String(lastActionAt).replace(' ', 'T')).getTime();
+  if (isNaN(t)) return 0;
+  const diffMs = Date.now() - t;
+  return Math.max(0, diffMs / (1000 * 60 * 60 * 24));
+}
+
+// Helper: Format duration in Thai (e.g. 5 วัน 6 ชม.)
+function formatDurationText(days) {
+  if (days == null || isNaN(days) || days <= 0) return 'เพิ่งทำรายการ';
+  if (days < (1 / 24)) {
+    const mins = Math.max(1, Math.round(days * 24 * 60));
+    return `${mins} นาที`;
+  }
+  if (days < 1) {
+    const hrs = Math.floor(days * 24);
+    const mins = Math.round((days * 24 - hrs) * 60);
+    return `${hrs} ชม. ${mins} นาที`;
+  }
+  const d = Math.floor(days);
+  const hrs = Math.round((days - d) * 24);
+  return `${d} วัน ${hrs} ชม.`;
+}
+
+// Helper: Floating Toast Notification
+function showToast(message, isSuccess = true) {
+  let toast = document.getElementById('pda-toast');
+  if (!toast) {
+    toast = document.createElement('div');
+    toast.id = 'pda-toast';
+    document.body.appendChild(toast);
+  }
+  toast.innerHTML = `<span>${isSuccess ? '✅' : '❌'}</span> <span>${message}</span>`;
+  toast.style.background = isSuccess ? '#0f172a' : '#991b1b';
+  toast.classList.add('show');
+  setTimeout(() => {
+    toast.classList.remove('show');
+  }, 3500);
+}
+
 // Admin Auth Management
 let adminAuthToken = localStorage.getItem('pda_admin_token') || '';
 
@@ -519,6 +568,21 @@ async function fetchStats(isSilent = false) {
       document.getElementById('kpi-checked-out').textContent = stats.checkedOut;
       document.getElementById('count-dept-all').textContent = stats.total;
 
+      // Overdue stats update
+      const overdueCount = stats.overdueCount || 0;
+      const kpiOverdue = document.getElementById('kpi-overdue');
+      if (kpiOverdue) kpiOverdue.textContent = overdueCount;
+      const kpiCardOverdue = document.getElementById('kpi-card-overdue');
+      if (kpiCardOverdue) {
+        if (overdueCount > 0) {
+          kpiCardOverdue.style.background = '#fff1f2';
+          kpiCardOverdue.style.borderLeftColor = '#dc2626';
+        } else {
+          kpiCardOverdue.style.background = '#ffffff';
+          kpiCardOverdue.style.borderLeftColor = 'var(--border-default)';
+        }
+      }
+
       const abnormalCount = stats.abnormalCount || 0;
       const kpiAbnormal = document.getElementById('kpi-abnormal');
       if (kpiAbnormal) kpiAbnormal.textContent = abnormalCount;
@@ -538,10 +602,17 @@ async function fetchStats(isSilent = false) {
         }
       }
       
-      allDepartments = stats.departments;
+      allDepartments = stats.departments || [];
+      overdueDevicesList = stats.overdueDevices || [];
+
       renderDeptFilterTabs();
       renderQuickKioskLinks();
       updateDepartmentDropdowns();
+
+      // Render Dashboard sections
+      renderDashboardOverdue(overdueDevicesList, overdueCount);
+      renderDashboardDeptGrid(allDepartments);
+      updateDashboardDeptSelect(allDepartments);
     }
   } catch (err) {
     if (!isSilent) console.error('Error fetching stats:', err);
@@ -553,8 +624,47 @@ async function fetchDevices(isSilent = false) {
     const res = await fetch('/api/devices');
     const data = await res.json();
     if (data.success) {
-      allDevices = data.devices;
+      allDevices = (data.devices || []).map(dev => {
+        const daysOut = dev.days_since_action != null ? parseFloat(dev.days_since_action) : calcDaysOut(dev.last_action_at);
+        const isOverdue = dev.status === 'CHECKED_OUT' && daysOut >= 3.0;
+        return {
+          ...dev,
+          daysOut,
+          isOverdue
+        };
+      });
+
+      // Update Dashboard badge counts
+      const badgeAll = document.getElementById('dash-badge-all');
+      const badgeIn = document.getElementById('dash-badge-in');
+      const badgeOut = document.getElementById('dash-badge-out');
+      const badgeOverdue = document.getElementById('dash-badge-overdue');
+
+      const countIn = allDevices.filter(d => d.status === 'IN_CABINET').length;
+      const countOut = allDevices.filter(d => d.status === 'CHECKED_OUT').length;
+      const countOverdue = allDevices.filter(d => d.isOverdue).length;
+
+      if (badgeAll) badgeAll.textContent = allDevices.length;
+      if (badgeIn) badgeIn.textContent = countIn;
+      if (badgeOut) badgeOut.textContent = countOut;
+      if (badgeOverdue) badgeOverdue.textContent = countOverdue;
+
+      // Re-render overdue section if not populated from stats
+      if (!overdueDevicesList || overdueDevicesList.length === 0) {
+        renderDashboardOverdue(allDevices.filter(d => d.isOverdue), countOverdue);
+      }
+
+      renderDashboardInventory();
       applyFiltersAndRender();
+
+      const listModal = document.getElementById('device-list-modal');
+      if (listModal && listModal.classList.contains('open')) {
+        renderModalDeviceList();
+      }
+
+      if (typeof refreshOpenDrawers === 'function') {
+        refreshOpenDrawers();
+      }
     }
   } catch (err) {
     if (!isSilent) console.error('Error fetching devices:', err);
@@ -673,7 +783,11 @@ function applyFiltersAndRender() {
 
   // Filter status
   if (currentStatusFilter !== 'ALL') {
-    filtered = filtered.filter(d => d.status === currentStatusFilter);
+    if (currentStatusFilter === 'OVERDUE_3D') {
+      filtered = filtered.filter(d => d.isOverdue);
+    } else {
+      filtered = filtered.filter(d => d.status === currentStatusFilter);
+    }
   }
 
   // Filter search
@@ -707,6 +821,7 @@ function renderCabinets(devices) {
     const deptDevices = devices.filter(d => d.department_id === dept.id);
     const inCabinetCount = deptDevices.filter(d => d.status === 'IN_CABINET').length;
     const checkedOutCount = deptDevices.filter(d => d.status === 'CHECKED_OUT').length;
+    const overdueCount = deptDevices.filter(d => d.isOverdue).length;
 
     html += `
       <section class="cabinet-section">
@@ -723,6 +838,7 @@ function renderCabinets(devices) {
             <div class="cabinet-summary-pills">
               <span class="pill-status green">ในตู้: ${inCabinetCount}</span>
               <span class="pill-status red">เบิกใช้: ${checkedOutCount}</span>
+              ${overdueCount > 0 ? `<span class="pill-status" style="background: #fef2f2; color: #dc2626; border: 1px solid #fca5a5; font-weight: 700;">🚨 ค้าง >3 วัน: ${overdueCount}</span>` : ''}
             </div>
             ${deptDevices.length === 0 ? `
               <button class="btn-icon" onclick="deleteDepartment('${dept.id}')" style="color: #dc2626; border-color: #fecaca; background: #fef2f2; font-size: 0.78rem; padding: 0.35rem 0.6rem;" title="ลบตู้เปล่านี้">
@@ -752,8 +868,11 @@ function renderCabinets(devices) {
 
 function renderDeviceCard(dev) {
   const isInCabinet = dev.status === 'IN_CABINET';
-  const statusClass = isInCabinet ? 'in-cabinet' : 'checked-out';
-  const statusLabel = isInCabinet ? 'ในตู้' : 'เบิกใช้';
+  const isOverdue = dev.isOverdue;
+  const statusClass = isOverdue ? 'checked-out overdue-warning' : (isInCabinet ? 'in-cabinet' : 'checked-out');
+  const statusLabel = isInCabinet ? 'ในตู้' : (isOverdue ? 'ค้างเกิน 3 วัน' : 'เบิกใช้');
+  const days = dev.daysOut || calcDaysOut(dev.last_action_at);
+  const durationStr = formatDurationText(days);
 
   return `
     <div class="device-card ${statusClass}">
@@ -762,8 +881,8 @@ function renderDeviceCard(dev) {
           ${dev.custom_sn}
         </div>
         <div class="status-led">
-          <span class="led-dot"></span>
-          <span>${statusLabel}</span>
+          <span class="led-dot" style="${isOverdue ? 'background: #dc2626; box-shadow: 0 0 8px #dc2626;' : ''}"></span>
+          <span style="${isOverdue ? 'color: #dc2626; font-weight: 700;' : ''}">${statusLabel}</span>
         </div>
       </div>
 
@@ -782,14 +901,27 @@ function renderDeviceCard(dev) {
         ? `<div class="charging-banner">
              พร้อมใช้งานในตู้
            </div>`
-        : `<div class="in-use-banner">
+        : `<div class="in-use-banner" style="${isOverdue ? 'border-color: #fca5a5; background: #fff5f5;' : ''}">
              <div class="staff-title">ผู้เบิก:</div>
-             <div class="staff-val">${dev.current_staff_id || 'ไม่ทราบรหัส'}</div>
-             <div class="time-ago">${dev.last_action_at || ''}</div>
+             <div class="staff-val" style="${isOverdue ? 'color: #991b1b; font-weight: 700;' : ''}">
+               ${dev.current_staff_id || 'ไม่ทราบรหัส'}
+               ${isOverdue ? `<span class="badge-overdue" style="margin-left: 0.35rem; font-size: 0.72rem;">🚨 ${Math.floor(days)} วัน</span>` : ''}
+             </div>
+             <div class="time-ago">${dev.last_action_at || ''} (${durationStr})</div>
+             ${isOverdue ? `
+               <button type="button" class="btn-quick-return" style="width: 100%; margin-top: 0.4rem; justify-content: center; display: flex;" onclick="quickCheckInDevice('${dev.custom_sn}', '${dev.original_sn}')">
+                 📥 บันทึกคืนตู้ทันที
+               </button>
+             ` : ''}
            </div>`
       }
 
       <div class="device-actions-row">
+        ${!isInCabinet && !isOverdue ? `
+          <button class="btn-quick-return" style="font-size: 0.72rem; padding: 0.15rem 0.45rem;" onclick="quickCheckInDevice('${dev.custom_sn}', '${dev.original_sn}')" title="คืนอุปกรณ์เข้าตู้ทันที">
+            📥 คืนตู้
+          </button>
+        ` : ''}
         <button class="btn-icon" onclick="openQrModal(${dev.id})" title="พิมพ์สติ๊กเกอร์ QR ดวงนี้">
           🖨️ QR
         </button>
@@ -1295,28 +1427,953 @@ function renderBatchStickers() {
 }
 
 // -------------------------------------------------------------
-// Tabs: Matrix vs Logs
+// Tabs: Dashboard vs Matrix vs Logs
 // -------------------------------------------------------------
 
 function switchMainTab(tab) {
+  currentMainTab = tab;
+  const dashSec = document.getElementById('section-dashboard');
   const matrixSec = document.getElementById('section-matrix');
   const logsSec = document.getElementById('section-logs');
   const navLinks = document.querySelectorAll('header.app-header .nav-link');
 
   navLinks.forEach(l => l.classList.remove('active'));
 
-  if (tab === 'matrix') {
-    matrixSec.style.display = 'block';
-    logsSec.style.display = 'none';
-    navLinks[0].classList.add('active');
+  if (tab === 'dashboard') {
+    if (dashSec) dashSec.style.display = 'block';
+    if (matrixSec) matrixSec.style.display = 'none';
+    if (logsSec) logsSec.style.display = 'none';
+    if (navLinks[0]) navLinks[0].classList.add('active');
+    renderDashboardInventory();
+  } else if (tab === 'matrix') {
+    if (dashSec) dashSec.style.display = 'none';
+    if (matrixSec) matrixSec.style.display = 'block';
+    if (logsSec) logsSec.style.display = 'none';
+    if (navLinks[1]) navLinks[1].classList.add('active');
+    applyFiltersAndRender();
   } else {
-    matrixSec.style.display = 'none';
-    logsSec.style.display = 'block';
-    navLinks[1].classList.add('active');
+    if (dashSec) dashSec.style.display = 'none';
+    if (matrixSec) matrixSec.style.display = 'none';
+    if (logsSec) logsSec.style.display = 'block';
+    if (navLinks[2]) navLinks[2].classList.add('active');
     syncLogPillsWithSelect();
     fetchStats(true);
     fetchLogs();
   }
+}
+
+// -------------------------------------------------------------
+// Dashboard Rendering & Overdue Alert Logic
+// -------------------------------------------------------------
+
+let isOverdueAlertCollapsed = false;
+
+function toggleOverdueAlertView() {
+  isOverdueAlertCollapsed = !isOverdueAlertCollapsed;
+  const content = document.getElementById('overdue-alert-content');
+  const btn = document.getElementById('btn-toggle-overdue');
+  if (content) {
+    content.style.display = isOverdueAlertCollapsed ? 'none' : 'block';
+  }
+  if (btn) {
+    btn.innerHTML = isOverdueAlertCollapsed 
+      ? `📂 แสดงรายละเอียด (${window.lastOverdueCount || 0} เครื่อง)` 
+      : '🔼 พับเก็บตาราง';
+  }
+}
+
+function renderDashboardOverdue(overdueList = [], count = 0) {
+  const container = document.getElementById('overdue-alert-container');
+  if (!container) return;
+
+  const actualList = (overdueList && overdueList.length > 0) ? overdueList : allDevices.filter(d => d.isOverdue);
+  const actualCount = count || actualList.length;
+  window.lastOverdueCount = actualCount;
+
+  if (actualCount === 0 || actualList.length === 0) {
+    container.innerHTML = `
+      <div class="overdue-success-box">
+        <div style="display: flex; align-items: center; gap: 0.85rem;">
+          <div class="success-icon-badge">✅</div>
+          <div>
+            <div class="success-title">อุปกรณ์ทุกเครื่องถูกจัดเก็บตามกำหนดเวลา</div>
+            <div class="success-desc">
+              ไม่พบ PDA ที่ค้างนอกตู้นานเกิน 3 วัน อุปกรณ์ทั้งหมดถูกจัดเก็บและชาร์จตามระเบียบ
+            </div>
+          </div>
+        </div>
+        <div class="success-status-pill">
+          ● สถานะปกติเรียบร้อย
+        </div>
+      </div>
+    `;
+    return;
+  }
+
+  container.innerHTML = `
+    <div class="overdue-alert-box">
+      <div class="overdue-alert-header">
+        <div class="overdue-alert-title">
+          <span class="pulse-dot"></span>
+          <span class="badge-alert-label">ติดตามเร่งด่วน</span>
+          <h3>พบ PDA ที่ไม่ได้นำมาเก็บเข้าตู้เกิน 3 วัน</h3>
+          <span class="badge-overdue-count">${actualCount} เครื่อง</span>
+        </div>
+        <div class="overdue-header-actions">
+          <button type="button" class="btn-overdue-filter" onclick="filterDashboardStatus('OVERDUE_3D')">
+            🔍 กรองเฉพาะกลุ่มนี้
+          </button>
+          <button type="button" id="btn-toggle-overdue" class="btn-toggle-collapse" onclick="toggleOverdueAlertView()">
+            ${isOverdueAlertCollapsed ? `📂 แสดงรายละเอียด (${actualCount})` : '🔼 พับเก็บตาราง'}
+          </button>
+        </div>
+      </div>
+
+      <div id="overdue-alert-content" style="display: ${isOverdueAlertCollapsed ? 'none' : 'block'};">
+        <div class="overdue-alert-desc">
+          <span class="desc-icon">ℹ️</span>
+          <span>อุปกรณ์ด้านล่างนี้ถูกเบิกออกไปใช้งานและ <strong>ยังไม่ถูกนำมาเก็บเข้าตู้ชาร์จนานเกิน 3 วัน (72 ชม.)</strong> กรุณาติดตามนำกลับมาเก็บ หรือกด <strong>"📥 คืนตู้ทันที"</strong> เพื่อบันทึกอัปเดต</span>
+        </div>
+
+        <div class="overdue-table-wrapper">
+          <table class="overdue-table">
+            <thead>
+              <tr>
+                <th style="width: 130px;">รหัสย่อ (Custom)</th>
+                <th>Original Serial Number</th>
+                <th>ตู้จัดเก็บ / แผนก</th>
+                <th>ผู้ถือครอง (Staff ID)</th>
+                <th>วันที่เบิกออก</th>
+                <th>ระยะเวลาค้างนอกตู้</th>
+                <th style="text-align: center; width: 140px;">การจัดการ</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${actualList.map(dev => {
+                const days = dev.days_out != null ? dev.days_out : (dev.daysOut || calcDaysOut(dev.last_action_at));
+                const durationStr = formatDurationText(days);
+                const deptName = dev.department_name ? `${dev.department_id} - ${dev.department_name}` : dev.department_id;
+                return `
+                  <tr>
+                    <td>
+                      <span class="custom-sn-badge">
+                        ${dev.custom_sn}
+                      </span>
+                    </td>
+                    <td>
+                      <span class="original-sn-mono">${dev.original_sn}</span>
+                    </td>
+                    <td>
+                      <span class="dept-tag-name">${deptName}</span>
+                    </td>
+                    <td>
+                      <span class="staff-holder-badge">👤 ${dev.current_staff_id || 'ไม่ระบุ'}</span>
+                    </td>
+                    <td class="text-secondary-cell">
+                      ${dev.last_action_at || '—'}
+                    </td>
+                    <td>
+                      <span class="badge-overdue-time">
+                        ⏳ ค้าง ${durationStr}
+                      </span>
+                    </td>
+                    <td style="text-align: center;">
+                      <button type="button" class="btn-quick-return" onclick="quickCheckInDevice('${dev.custom_sn}', '${dev.original_sn}')" title="บันทึกคืนเข้าตู้ทันที">
+                        📥 คืนตู้ทันที
+                      </button>
+                    </td>
+                  </tr>
+                `;
+              }).join('')}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+function renderDashboardDeptGrid(departments = []) {
+  const grid = document.getElementById('dashboard-dept-grid');
+  const badge = document.getElementById('dash-dept-total-badge');
+  if (badge) badge.textContent = `${departments.length} แผนก`;
+  if (!grid) return;
+
+  if (departments.length === 0) {
+    grid.innerHTML = `<div style="grid-column: 1/-1; text-align: center; color: var(--text-muted); padding: 2rem;">ไม่พบข้อมูลแผนก</div>`;
+    return;
+  }
+
+  grid.innerHTML = departments.map(d => {
+    const total = d.total_devices || 0;
+    const inCabinet = d.in_cabinet || 0;
+    const checkedOut = d.checked_out || 0;
+    const overdue = d.overdue_3d || 0;
+    const availPct = total > 0 ? Math.round((inCabinet / total) * 100) : 0;
+    
+    let toneClass = 'high';
+    if (availPct < 40) toneClass = 'low';
+    else if (availPct < 75) toneClass = 'mid';
+
+    return `
+      <div class="dept-summary-card" onclick="filterDeptAndStatus('${d.id}', 'ALL')" title="คลิกเพื่อดูรายการอุปกรณ์แผนก ${d.name} ทั้งหมด">
+        <div class="dept-card-top">
+          <div class="dept-card-name">
+            <span class="cabinet-badge">${d.id}</span>
+            <div class="dept-titles">
+              <span class="dept-title-text">${d.name}</span>
+              <span class="dept-desc-sub">${d.description || 'ตู้จัดเก็บประจำแผนก'}</span>
+            </div>
+          </div>
+          <a href="/dept/${d.id}" target="_blank" class="btn-open-kiosk" onclick="event.stopPropagation()" title="เปิดหน้าตู้ประจำแผนก ${d.id}">
+            หน้าตู้ ↗
+          </a>
+        </div>
+
+        <div class="dept-card-progress">
+          <div class="progress-info">
+            <span class="progress-label">ความพร้อมใช้งานในตู้</span>
+            <span class="avail-badge ${toneClass}">${availPct}% (${inCabinet}/${total})</span>
+          </div>
+          <div class="progress-track">
+            <div class="progress-fill ${toneClass}" style="width: ${availPct}%;"></div>
+          </div>
+        </div>
+
+        <div class="dept-card-stats" id="dept-stats-${d.id}">
+          <div class="dept-stat-box box-in interactive" id="box-in-${d.id}" onclick="event.stopPropagation(); filterDeptAndStatus('${d.id}', 'IN_CABINET')" title="คลิกดูรายชื่อ ${inCabinet} เครื่องที่อยู่ในตู้">
+            <span class="stat-box-label">🟢 ในตู้</span>
+            <strong class="stat-box-val text-green">${inCabinet}</strong>
+            <span class="click-hint">ดูรายการ ↓</span>
+          </div>
+          <div class="dept-stat-box box-out interactive" id="box-out-${d.id}" onclick="event.stopPropagation(); filterDeptAndStatus('${d.id}', 'CHECKED_OUT')" title="คลิกดูรายชื่อ ${checkedOut} เครื่องที่ถูกเบิกใช้">
+            <span class="stat-box-label">🔴 เบิกใช้</span>
+            <strong class="stat-box-val text-red">${checkedOut}</strong>
+            <span class="click-hint">ดูรายการ ↓</span>
+          </div>
+          <div class="dept-stat-box ${overdue > 0 ? 'box-overdue-alert interactive' : 'box-overdue-zero'}" id="box-overdue-${d.id}" ${overdue > 0 ? `onclick="event.stopPropagation(); filterDeptAndStatus('${d.id}', 'OVERDUE_3D')"` : ''} title="${overdue > 0 ? `คลิกดู ${overdue} เครื่องที่ค้างเกิน 3 วัน` : 'ไม่มีอุปกรณ์ค้าง'}">
+            <span class="stat-box-label ${overdue > 0 ? 'text-overdue-label' : ''}">🚨 ค้าง >3 วัน</span>
+            <strong class="stat-box-val ${overdue > 0 ? 'text-overdue-val' : 'text-zero-val'}">${overdue}</strong>
+            ${overdue > 0 ? '<span class="click-hint">ดูรายการ ↓</span>' : ''}
+          </div>
+        </div>
+
+        <div class="dept-card-footer">
+          <span class="dept-total-counter">รวม ${total} เครื่อง</span>
+          <button type="button" class="btn-view-dept-devices" onclick="event.stopPropagation(); filterDeptAndStatus('${d.id}', 'ALL')">
+            ดูรายการทั้งหมด (${total}) ↓
+          </button>
+        </div>
+      </div>
+    `;
+  }).join('');
+}
+
+function renderDashboardInventory() {
+  const tbody = document.getElementById('dashboard-table-body');
+  const countText = document.getElementById('dash-table-count-text');
+  if (!tbody) return;
+
+  let filtered = allDevices;
+
+  // 1. Status Filter
+  if (dashboardStatusFilter === 'IN_CABINET') {
+    filtered = filtered.filter(d => d.status === 'IN_CABINET');
+  } else if (dashboardStatusFilter === 'CHECKED_OUT') {
+    filtered = filtered.filter(d => d.status === 'CHECKED_OUT');
+  } else if (dashboardStatusFilter === 'OVERDUE_3D') {
+    filtered = filtered.filter(d => d.isOverdue);
+  }
+
+  // 2. Department Filter
+  if (dashboardDeptFilter !== 'ALL') {
+    filtered = filtered.filter(d => d.department_id === dashboardDeptFilter);
+  }
+
+  // 3. Search Filter
+  if (dashboardSearchQuery) {
+    const q = dashboardSearchQuery.toLowerCase();
+    filtered = filtered.filter(d =>
+      (d.original_sn && d.original_sn.toLowerCase().includes(q)) ||
+      (d.custom_sn && d.custom_sn.toLowerCase().includes(q)) ||
+      (d.model && d.model.toLowerCase().includes(q)) ||
+      (d.department_id && d.department_id.toLowerCase().includes(q)) ||
+      (d.department_name && d.department_name.toLowerCase().includes(q)) ||
+      (d.current_staff_id && d.current_staff_id.toLowerCase().includes(q))
+    );
+  }
+
+  if (countText) {
+    countText.textContent = `แสดง ${filtered.length} จากทั้งหมด ${allDevices.length} เครื่อง`;
+  }
+
+  // Update Active Filter Indicator Banner
+  const banner = document.getElementById('dash-active-filter-banner');
+  if (banner) {
+    const isFiltered = (dashboardStatusFilter !== 'ALL') || (dashboardDeptFilter !== 'ALL') || Boolean(dashboardSearchQuery);
+    if (isFiltered) {
+      let filterDesc = [];
+      if (dashboardDeptFilter !== 'ALL') {
+        const dObj = allDepartments.find(d => d.id === dashboardDeptFilter);
+        const deptLabel = dObj ? `${dObj.id} - ${dObj.name}` : dashboardDeptFilter;
+        filterDesc.push(`🏢 แผนก: <strong>${deptLabel}</strong>`);
+      }
+      if (dashboardStatusFilter === 'IN_CABINET') {
+        filterDesc.push(`สถานะ: <span style="color: #16a34a; font-weight: 700;">🟢 ในตู้ (พร้อมใช้)</span>`);
+      } else if (dashboardStatusFilter === 'CHECKED_OUT') {
+        filterDesc.push(`สถานะ: <span style="color: #dc2626; font-weight: 700;">🔴 ไม่อยู่ (เบิกใช้งาน)</span>`);
+      } else if (dashboardStatusFilter === 'OVERDUE_3D') {
+        filterDesc.push(`สถานะ: <span style="color: #dc2626; font-weight: 700;">🚨 ค้างเกิน 3 วัน</span>`);
+      }
+      if (dashboardSearchQuery) {
+        filterDesc.push(`ค้นหา: <strong>"${dashboardSearchQuery}"</strong>`);
+      }
+      banner.style.display = 'flex';
+      banner.innerHTML = `
+        <div class="active-filter-info">
+          <span>🔍 กำลังแสดงเฉพาะ:</span>
+          ${filterDesc.join(' <span class="filter-sep">•</span> ')}
+          <span class="active-filter-count">${filtered.length} เครื่อง</span>
+        </div>
+        <button type="button" class="btn-clear-filter" onclick="clearDashboardFilters()">
+          ✕ ล้างตัวกรอง (ดูทั้งหมด)
+        </button>
+      `;
+    } else {
+      banner.style.display = 'none';
+      banner.innerHTML = '';
+    }
+  }
+
+  if (filtered.length === 0) {
+    tbody.innerHTML = `
+      <tr>
+        <td colspan="10" style="text-align: center; color: var(--text-muted); padding: 2.5rem;">
+          🔍 ไม่พบอุปกรณ์ตามเงื่อนไขที่ค้นหา
+        </td>
+      </tr>
+    `;
+    return;
+  }
+
+  tbody.innerHTML = filtered.map((dev, idx) => {
+    const isInCabinet = dev.status === 'IN_CABINET';
+    const isOverdue = dev.isOverdue;
+    const days = dev.daysOut || calcDaysOut(dev.last_action_at);
+    const durationStr = formatDurationText(days);
+
+    let statusBadge = '';
+    if (isOverdue) {
+      statusBadge = `<span class="badge-overdue">🚨 ค้างเกิน 3 วัน</span>`;
+    } else if (isInCabinet) {
+      statusBadge = `<span class="pill-status green">🟢 อยู่ในตู้</span>`;
+    } else {
+      statusBadge = `<span class="pill-status red">🔴 ไม่อยู่ (เบิกใช้)</span>`;
+    }
+
+    return `
+      <tr style="${isOverdue ? 'background: #fff8f8;' : ''}">
+        <td style="color: var(--text-muted); font-size: 0.8rem;">${idx + 1}</td>
+        <td>${statusBadge}</td>
+        <td>
+          <span style="font-family: var(--font-mono); font-weight: 700; color: #0f172a;">
+            ${dev.custom_sn}
+          </span>
+        </td>
+        <td style="font-family: var(--font-mono); font-size: 0.82rem;">${dev.original_sn}</td>
+        <td>
+          <span class="cabinet-badge" style="font-size: 0.78rem; padding: 0.15rem 0.45rem;">${dev.department_id}</span>
+        </td>
+        <td style="font-size: 0.82rem; color: var(--text-muted);">${dev.model || '-'}</td>
+        <td>
+          ${isInCabinet 
+            ? '<span style="color: var(--text-muted);">—</span>' 
+            : `<span style="font-weight: 600; color: var(--red);">👤 ${dev.current_staff_id || 'ไม่ทราบรหัส'}</span>`
+          }
+        </td>
+        <td style="font-size: 0.78rem; color: var(--text-muted);">${dev.last_action_at || '—'}</td>
+        <td style="font-size: 0.8rem; font-weight: 500;">
+          ${isInCabinet ? '<span style="color: var(--green);">พร้อมใช้</span>' : `<span style="${isOverdue ? 'color: #dc2626; font-weight: 700;' : 'color: var(--text-secondary);'}">นอกตู้ ${durationStr}</span>`}
+        </td>
+        <td style="text-align: center;">
+          <div style="display: inline-flex; align-items: center; gap: 0.3rem;">
+            ${!isInCabinet ? `
+              <button type="button" class="btn-quick-return" onclick="quickCheckInDevice('${dev.custom_sn}', '${dev.original_sn}')" title="คืนอุปกรณ์เข้าตู้">
+                📥 คืนตู้
+              </button>
+            ` : ''}
+            <button class="btn-icon" onclick="openQrModal(${dev.id})" title="พิมพ์สติ๊กเกอร์ QR">
+              🖨️
+            </button>
+            <button class="btn-icon" onclick="openEditDeviceModal(${dev.id})" title="แก้ไขข้อมูล">
+              ✏️
+            </button>
+          </div>
+        </td>
+      </tr>
+    `;
+  }).join('');
+}
+
+function scrollToInventory() {
+  const el = document.getElementById('dashboard-inventory-section');
+  if (el) {
+    const header = document.querySelector('header.app-header');
+    const headerHeight = header ? header.offsetHeight : 70;
+    const elementPosition = el.getBoundingClientRect().top + window.pageYOffset;
+    const offsetPosition = elementPosition - headerHeight - 16;
+
+    window.scrollTo({
+      top: offsetPosition,
+      behavior: 'smooth'
+    });
+
+    el.classList.add('section-focus-highlight');
+    setTimeout(() => el.classList.remove('section-focus-highlight'), 1800);
+  }
+}
+
+function filterDashboardStatus(statusVal, shouldScroll = true) {
+  dashboardStatusFilter = statusVal;
+
+  const pills = {
+    'ALL': document.getElementById('dash-pill-all'),
+    'IN_CABINET': document.getElementById('dash-pill-in'),
+    'CHECKED_OUT': document.getElementById('dash-pill-out'),
+    'OVERDUE_3D': document.getElementById('dash-pill-overdue')
+  };
+
+  Object.values(pills).forEach(p => {
+    if (p) p.classList.remove('active');
+  });
+
+  if (pills[statusVal]) {
+    pills[statusVal].classList.add('active');
+  }
+
+  // If currently not on dashboard, switch to dashboard
+  const dashSec = document.getElementById('section-dashboard');
+  if (dashSec && dashSec.style.display === 'none') {
+    switchMainTab('dashboard');
+  }
+
+  renderDashboardInventory();
+
+  if (shouldScroll) {
+    scrollToInventory();
+  }
+}
+
+function filterDeptAndStatus(deptId, statusVal = 'ALL') {
+  dashboardSearchQuery = '';
+  const searchInput = document.getElementById('dash-search-input');
+  if (searchInput) searchInput.value = '';
+
+  const sel = document.getElementById('dash-dept-select');
+  if (sel) sel.value = deptId;
+  dashboardDeptFilter = deptId;
+
+  filterDashboardStatus(statusVal, true);
+}
+
+function filterByDeptInDashboard(deptId) {
+  filterDeptAndStatus(deptId, 'ALL');
+}
+
+function clearDashboardFilters() {
+  dashboardStatusFilter = 'ALL';
+  dashboardDeptFilter = 'ALL';
+  dashboardSearchQuery = '';
+  const searchInput = document.getElementById('dash-search-input');
+  if (searchInput) searchInput.value = '';
+  const sel = document.getElementById('dash-dept-select');
+  if (sel) sel.value = 'ALL';
+
+  const pills = {
+    'ALL': document.getElementById('dash-pill-all'),
+    'IN_CABINET': document.getElementById('dash-pill-in'),
+    'CHECKED_OUT': document.getElementById('dash-pill-out'),
+    'OVERDUE_3D': document.getElementById('dash-pill-overdue')
+  };
+  Object.values(pills).forEach(p => { if (p) p.classList.remove('active'); });
+  if (pills['ALL']) pills['ALL'].classList.add('active');
+
+  renderDashboardInventory();
+  scrollToInventory();
+}
+
+function handleDashboardSearch() {
+  const input = document.getElementById('dash-search-input');
+  dashboardSearchQuery = input ? input.value.trim() : '';
+  renderDashboardInventory();
+}
+
+function handleDashboardDeptChange(deptId) {
+  dashboardDeptFilter = deptId || 'ALL';
+  renderDashboardInventory();
+  scrollToInventory();
+}
+
+function updateDashboardDeptSelect(departments = []) {
+  const sel = document.getElementById('dash-dept-select');
+  if (!sel) return;
+  const currentVal = sel.value || 'ALL';
+  let html = `<option value="ALL">🏢 ทุกแผนก/ตู้</option>`;
+  departments.forEach(d => {
+    html += `<option value="${d.id}">${d.id} - ${d.name}</option>`;
+  });
+  sel.innerHTML = html;
+  if (departments.some(d => d.id === currentVal)) {
+    sel.value = currentVal;
+  }
+}
+
+async function quickCheckInDevice(code, origSn) {
+  if (!confirm(`ยืนยันการทำรายการ: บันทึกคืน PDA [${code}] เข้าตู้ชาร์จทันทีใช่หรือไม่?`)) {
+    return;
+  }
+
+  try {
+    const res = await fetch('/api/scan', {
+      method: 'POST',
+      headers: getAuthHeaders({ 'Content-Type': 'application/json' }),
+      body: JSON.stringify({
+        code: code,
+        action: 'CHECK_IN',
+        staff_id: 'ADMIN'
+      })
+    });
+    const data = await res.json();
+
+    if (data.success) {
+      showToast(`📥 คืนอุปกรณ์ [${code}] เข้าตู้เรียบร้อยแล้ว`, true);
+      if (typeof playSound === 'function') playSound('success');
+      refreshData();
+    } else {
+      showToast(`❌ ${data.message || 'เกิดข้อผิดพลาดในการคืนอุปกรณ์'}`, false);
+      if (typeof playSound === 'function') playSound('error');
+    }
+  } catch (err) {
+    showToast(`❌ เกิดข้อผิดพลาด: ${err.message}`, false);
+  }
+}
+
+// =============================================================
+// Expandable Card Dropdown Drawer Logic
+// =============================================================
+
+const activeDeptDrawers = {};
+
+function toggleDeptDrawer(deptId, filterStatus) {
+  const drawer = document.getElementById(`dept-drawer-${deptId}`);
+  const titleEl = document.getElementById(`drawer-title-${deptId}`);
+  const listEl = document.getElementById(`drawer-list-${deptId}`);
+  if (!drawer || !listEl) return;
+
+  const currentStatus = activeDeptDrawers[deptId];
+
+  // If clicked close or clicked the same status that is already open -> close it
+  if (!filterStatus || currentStatus === filterStatus) {
+    drawer.style.display = 'none';
+    delete activeDeptDrawers[deptId];
+    clearBoxHighlights(deptId);
+    return;
+  }
+
+  // Set active
+  activeDeptDrawers[deptId] = filterStatus;
+  drawer.style.display = 'block';
+
+  // Highlight active box
+  clearBoxHighlights(deptId);
+  if (filterStatus === 'IN_CABINET') {
+    const b = document.getElementById(`box-in-${deptId}`);
+    if (b) b.classList.add('active-stat-box');
+  } else if (filterStatus === 'CHECKED_OUT') {
+    const b = document.getElementById(`box-out-${deptId}`);
+    if (b) b.classList.add('active-stat-box');
+  } else if (filterStatus === 'OVERDUE_3D') {
+    const b = document.getElementById(`box-overdue-${deptId}`);
+    if (b) b.classList.add('active-stat-box');
+  }
+
+  renderDrawerContent(deptId, filterStatus);
+}
+
+function renderDrawerContent(deptId, filterStatus) {
+  const titleEl = document.getElementById(`drawer-title-${deptId}`);
+  const listEl = document.getElementById(`drawer-list-${deptId}`);
+  if (!listEl) return;
+
+  // Filter devices
+  const deptDevices = allDevices.filter(d => d.department_id === deptId);
+  let filtered = deptDevices;
+  let labelText = 'รายการอุปกรณ์ทั้งหมด';
+
+  if (filterStatus === 'IN_CABINET') {
+    filtered = deptDevices.filter(d => d.status === 'IN_CABINET');
+    labelText = `🟢 อยู่ในตู้พร้อมใช้ (${filtered.length} เครื่อง)`;
+  } else if (filterStatus === 'CHECKED_OUT') {
+    filtered = deptDevices.filter(d => d.status === 'CHECKED_OUT');
+    labelText = `🔴 เบิกใช้งาน (${filtered.length} เครื่อง)`;
+  } else if (filterStatus === 'OVERDUE_3D') {
+    filtered = deptDevices.filter(d => d.isOverdue);
+    labelText = `🚨 ค้างเกิน 3 วัน (${filtered.length} เครื่อง)`;
+  } else {
+    labelText = `📋 อุปกรณ์ทั้งหมด (${deptDevices.length} เครื่อง)`;
+  }
+
+  if (titleEl) {
+    titleEl.innerHTML = `<strong>${labelText}</strong>`;
+  }
+
+  if (filtered.length === 0) {
+    listEl.innerHTML = `<div style="text-align: center; color: var(--text-muted); font-size: 0.8rem; padding: 1.25rem 0;">ไม่พบรายการอุปกรณ์ในกลุ่มนี้</div>`;
+    return;
+  }
+
+  listEl.innerHTML = filtered.map(dev => {
+    const isInCabinet = dev.status === 'IN_CABINET';
+    const isOverdue = dev.isOverdue;
+    const days = dev.daysOut || calcDaysOut(dev.last_action_at);
+    const durationStr = formatDurationText(days);
+
+    return `
+      <div class="drawer-item ${isOverdue ? 'overdue' : ''}">
+        <div class="drawer-item-left">
+          <span class="drawer-custom-sn">${dev.custom_sn}</span>
+          <div class="drawer-item-info">
+            <div class="drawer-orig-sn">${dev.original_sn} ${dev.model ? '• ' + dev.model : ''}</div>
+            ${isInCabinet 
+              ? '<div class="drawer-sub-status in">🟢 อยู่ในตู้ พร้อมใช้งาน</div>'
+              : `<div class="drawer-sub-status out">👤 <strong>${dev.current_staff_id || 'ไม่ทราบรหัส'}</strong> • ค้าง ${durationStr}</div>`
+            }
+          </div>
+        </div>
+        <div style="display: flex; align-items: center; gap: 0.35rem;">
+          ${!isInCabinet ? `
+            <button type="button" class="drawer-btn-return" onclick="quickCheckInDevice('${dev.custom_sn}', '${dev.original_sn}')" title="คืนอุปกรณ์เข้าตู้ทันที">
+              📥 คืน
+            </button>
+          ` : ''}
+          <button type="button" class="btn-icon" style="padding: 0.15rem 0.35rem; font-size: 0.8rem;" onclick="openQrModal(${dev.id})" title="พิมพ์สติ๊กเกอร์ QR">
+            🖨️
+          </button>
+        </div>
+      </div>
+    `;
+  }).join('');
+}
+
+function clearBoxHighlights(deptId) {
+  ['box-in-', 'box-out-', 'box-overdue-'].forEach(prefix => {
+    const el = document.getElementById(prefix + deptId);
+    if (el) el.classList.remove('active-stat-box');
+  });
+}
+
+function refreshOpenDrawers() {
+  Object.keys(activeDeptDrawers).forEach(deptId => {
+    const status = activeDeptDrawers[deptId];
+    if (status) {
+      renderDrawerContent(deptId, status);
+    }
+  });
+}
+
+// =============================================================
+// Device List Popup Modal (Quick View on Card / KPI Click)
+// =============================================================
+
+let modalCurrentDeptId = 'ALL';
+let modalCurrentStatus = 'ALL';
+let modalSearchQuery = '';
+
+function showDeviceListModal(options = {}) {
+  modalCurrentDeptId = options.deptId || 'ALL';
+  modalCurrentStatus = options.status || 'ALL';
+  modalSearchQuery = '';
+
+  const searchInput = document.getElementById('modal-list-search');
+  if (searchInput) searchInput.value = '';
+
+  renderModalDeviceList();
+  openModal('device-list-modal');
+}
+
+function setModalFilterStatus(statusVal) {
+  modalCurrentStatus = statusVal;
+  renderModalDeviceList();
+}
+
+function handleModalListSearch() {
+  const input = document.getElementById('modal-list-search');
+  modalSearchQuery = input ? input.value.trim().toLowerCase() : '';
+  renderModalDeviceList();
+}
+
+function renderModalDeviceList() {
+  const titleEl = document.getElementById('modal-list-title');
+  const subEl = document.getElementById('modal-list-subtitle');
+  const iconEl = document.getElementById('modal-list-icon');
+  const pillsEl = document.getElementById('modal-filter-pills');
+  const countBadgeEl = document.getElementById('modal-list-count-badge');
+  const tbody = document.getElementById('modal-list-tbody');
+
+  if (!tbody) return;
+
+  // 1. Dept Title & Info
+  let deptName = 'ทุกแผนกในระบบ';
+  if (modalCurrentDeptId !== 'ALL') {
+    const d = allDepartments.find(dep => dep.id === modalCurrentDeptId);
+    deptName = d ? `${d.id} - ${d.name}` : `แผนก ${modalCurrentDeptId}`;
+  }
+
+  if (titleEl) {
+    titleEl.textContent = modalCurrentDeptId === 'ALL' ? '📦 รายการอุปกรณ์ส่วนกลาง (ทุกแผนก)' : `🏢 แผนก ${deptName}`;
+  }
+
+  // Department scope devices
+  const deptScopeDevices = allDevices.filter(d => modalCurrentDeptId === 'ALL' || d.department_id === modalCurrentDeptId);
+  const countAll = deptScopeDevices.length;
+  const countIn = deptScopeDevices.filter(d => d.status === 'IN_CABINET').length;
+  const countOut = deptScopeDevices.filter(d => d.status === 'CHECKED_OUT').length;
+  const countOverdue = deptScopeDevices.filter(d => d.isOverdue).length;
+
+  // Status text for subtitle & icon
+  let statusText = 'แสดงอุปกรณ์ทั้งหมด';
+  if (modalCurrentStatus === 'IN_CABINET') {
+    statusText = '🟢 เฉพาะอุปกรณ์ที่อยู่ในตู้ (พร้อมใช้งาน)';
+    if (iconEl) iconEl.innerHTML = '🟢';
+  } else if (modalCurrentStatus === 'CHECKED_OUT') {
+    statusText = '🔴 เฉพาะอุปกรณ์ที่ถูกเบิกใช้งาน (ไม่อยู่)';
+    if (iconEl) iconEl.innerHTML = '🔴';
+  } else if (modalCurrentStatus === 'OVERDUE_3D') {
+    statusText = '🚨 เฉพาะอุปกรณ์ที่ค้างเกิน 3 วัน (ต้องติดตามด่วน)';
+    if (iconEl) iconEl.innerHTML = '🚨';
+  } else {
+    if (iconEl) iconEl.innerHTML = '📦';
+  }
+
+  if (subEl) subEl.textContent = statusText;
+
+  // Render Sub-tabs in Modal
+  if (pillsEl) {
+    pillsEl.innerHTML = `
+      <button type="button" class="dash-pill ${modalCurrentStatus === 'ALL' ? 'active' : ''}" onclick="setModalFilterStatus('ALL')">
+        <span>📋 ทั้งหมด</span>
+        <span class="pill-badge">${countAll}</span>
+      </button>
+      <button type="button" class="dash-pill ${modalCurrentStatus === 'IN_CABINET' ? 'active' : ''}" onclick="setModalFilterStatus('IN_CABINET')">
+        <span>🟢 ในตู้</span>
+        <span class="pill-badge green">${countIn}</span>
+      </button>
+      <button type="button" class="dash-pill ${modalCurrentStatus === 'CHECKED_OUT' ? 'active' : ''}" onclick="setModalFilterStatus('CHECKED_OUT')">
+        <span>🔴 เบิกใช้</span>
+        <span class="pill-badge red">${countOut}</span>
+      </button>
+      <button type="button" class="dash-pill ${modalCurrentStatus === 'OVERDUE_3D' ? 'active' : ''}" onclick="setModalFilterStatus('OVERDUE_3D')">
+        <span>🚨 ค้าง >3 วัน</span>
+        <span class="pill-badge alert">${countOverdue}</span>
+      </button>
+    `;
+  }
+
+  // Filter list
+  let list = deptScopeDevices;
+  if (modalCurrentStatus === 'IN_CABINET') {
+    list = list.filter(d => d.status === 'IN_CABINET');
+  } else if (modalCurrentStatus === 'CHECKED_OUT') {
+    list = list.filter(d => d.status === 'CHECKED_OUT');
+  } else if (modalCurrentStatus === 'OVERDUE_3D') {
+    list = list.filter(d => d.isOverdue);
+  }
+
+  if (modalSearchQuery) {
+    const q = modalSearchQuery;
+    list = list.filter(d =>
+      (d.original_sn && d.original_sn.toLowerCase().includes(q)) ||
+      (d.custom_sn && d.custom_sn.toLowerCase().includes(q)) ||
+      (d.model && d.model.toLowerCase().includes(q)) ||
+      (d.department_id && d.department_id.toLowerCase().includes(q)) ||
+      (d.department_name && d.department_name.toLowerCase().includes(q)) ||
+      (d.current_staff_id && d.current_staff_id.toLowerCase().includes(q))
+    );
+  }
+
+  if (countBadgeEl) {
+    countBadgeEl.textContent = `แสดง ${list.length} จาก ${countAll} เครื่อง`;
+  }
+
+  if (list.length === 0) {
+    tbody.innerHTML = `
+      <tr>
+        <td colspan="10" style="text-align: center; color: var(--text-muted); padding: 3rem;">
+          🔍 ไม่พบรายการอุปกรณ์ตามเงื่อนไขนี้
+        </td>
+      </tr>
+    `;
+    return;
+  }
+
+  tbody.innerHTML = list.map((dev, idx) => {
+    const isInCabinet = dev.status === 'IN_CABINET';
+    const isOverdue = dev.isOverdue;
+    const days = dev.daysOut || calcDaysOut(dev.last_action_at);
+    const durationStr = formatDurationText(days);
+
+    let statusBadge = '';
+    if (isOverdue) {
+      statusBadge = `<span class="badge-overdue">🚨 ค้าง >3 วัน</span>`;
+    } else if (isInCabinet) {
+      statusBadge = `<span class="pill-status green">🟢 ในตู้ (พร้อมใช้)</span>`;
+    } else {
+      statusBadge = `<span class="pill-status red">🔴 ไม่อยู่ (เบิกใช้)</span>`;
+    }
+
+    return `
+      <tr style="${isOverdue ? 'background: #fff8f8;' : ''}">
+        <td style="color: var(--text-muted); font-size: 0.8rem; text-align: center;">${idx + 1}</td>
+        <td>${statusBadge}</td>
+        <td>
+          <span class="custom-sn-badge">
+            ${dev.custom_sn}
+          </span>
+        </td>
+        <td class="original-sn-mono">${dev.original_sn}</td>
+        <td>
+          <span class="cabinet-badge" style="font-size: 0.78rem; padding: 0.15rem 0.45rem;">${dev.department_id}</span>
+        </td>
+        <td style="font-size: 0.82rem; color: var(--text-muted);">${dev.model || '-'}</td>
+        <td>
+          ${isInCabinet 
+            ? '<span style="color: var(--text-muted);">—</span>' 
+            : `<span style="font-weight: 700; color: #dc2626;">👤 ${dev.current_staff_id || 'ไม่ทราบรหัส'}</span>`
+          }
+        </td>
+        <td style="font-size: 0.8rem; color: #64748b;">${dev.last_action_at || '—'}</td>
+        <td style="font-size: 0.82rem; font-weight: 500;">
+          ${isInCabinet ? '<span style="color: var(--green);">พร้อมใช้</span>' : `<span style="${isOverdue ? 'color: #dc2626; font-weight: 700;' : 'color: var(--text-secondary);'}">ค้าง ${durationStr}</span>`}
+        </td>
+        <td style="text-align: center;">
+          <div style="display: inline-flex; align-items: center; gap: 0.35rem;">
+            ${!isInCabinet ? `
+              <button type="button" class="btn-quick-return" onclick="quickCheckInDevice('${dev.custom_sn}', '${dev.original_sn}')" title="คืนอุปกรณ์เข้าตู้ทันที">
+                📥 คืนตู้
+              </button>
+            ` : ''}
+            <button class="btn-icon" onclick="openQrModal(${dev.id})" title="พิมพ์สติ๊กเกอร์ QR">
+              🖨️
+            </button>
+          </div>
+        </td>
+      </tr>
+    `;
+  }).join('');
+}
+
+function jumpFromModalToTable() {
+  closeModal('device-list-modal');
+  filterDeptAndStatus(modalCurrentDeptId, modalCurrentStatus);
+}
+
+function exportModalListCsv() {
+  const deptScopeDevices = allDevices.filter(d => modalCurrentDeptId === 'ALL' || d.department_id === modalCurrentDeptId);
+  let list = deptScopeDevices;
+  if (modalCurrentStatus === 'IN_CABINET') list = list.filter(d => d.status === 'IN_CABINET');
+  else if (modalCurrentStatus === 'CHECKED_OUT') list = list.filter(d => d.status === 'CHECKED_OUT');
+  else if (modalCurrentStatus === 'OVERDUE_3D') list = list.filter(d => d.isOverdue);
+
+  if (list.length === 0) {
+    alert('ไม่มีข้อมูลอุปกรณ์ในกลุ่มนี้');
+    return;
+  }
+
+  const headers = ['ลำดับ', 'สถานะ', 'รหัสย่อ (Custom)', 'Original Serial Number', 'ตู้/แผนก', 'ชื่อแผนก', 'รุ่น', 'ผู้ถือครอง (Staff ID)', 'เวลาทำรายการล่าสุด', 'ระยะเวลาค้างนอกตู้'];
+  const csvLines = [headers.join(',')];
+
+  list.forEach((d, idx) => {
+    const statusText = d.isOverdue ? 'ค้างเกิน 3 วัน' : (d.status === 'IN_CABINET' ? 'อยู่ในตู้' : 'เบิกใช้งาน');
+    const days = d.daysOut || calcDaysOut(d.last_action_at);
+    const duration = d.status === 'IN_CABINET' ? 'พร้อมใช้' : formatDurationText(days);
+    const line = [
+      idx + 1,
+      `"${statusText}"`,
+      `"${d.custom_sn || ''}"`,
+      `"${d.original_sn || ''}"`,
+      `"${d.department_id || ''}"`,
+      `"${d.department_name || ''}"`,
+      `"${d.model || ''}"`,
+      `"${d.current_staff_id || ''}"`,
+      `"${d.last_action_at || ''}"`,
+      `"${duration}"`
+    ];
+    csvLines.push(line.join(','));
+  });
+
+  const blob = new Blob(['\uFEFF' + csvLines.join('\r\n')], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `pda_devices_${modalCurrentDeptId}_${modalCurrentStatus}_${Date.now()}.csv`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
+function exportDashboardCsv() {
+  if (!allDevices || allDevices.length === 0) {
+    alert('ไม่มีข้อมูลอุปกรณ์ให้ส่งออก');
+    return;
+  }
+
+  const headers = [
+    '#',
+    'รหัสย่อ (Custom QR)',
+    'Original Serial Number',
+    'แผนก/ตู้จัดเก็บ',
+    'สถานะการจัดเก็บ',
+    'เกินกำหนด 3 วันหรือไม่',
+    'รุ่น (Model)',
+    'ผู้ถือครอง (Staff ID)',
+    'เวลาทำรายการล่าสุด',
+    'ระยะเวลาที่อยู่นอกตู้/ในตู้',
+    'หมายเหตุ'
+  ];
+
+  const rows = allDevices.map((d, i) => {
+    const isInCabinet = d.status === 'IN_CABINET';
+    const statusThai = isInCabinet ? 'อยู่ในตู้ (พร้อมใช้)' : 'ไม่อยู่ (เบิกใช้งาน)';
+    const overdueThai = d.isOverdue ? 'เกินกำหนด (> 3 วัน)' : 'ปกติ';
+    const days = d.daysOut || calcDaysOut(d.last_action_at);
+    const duration = formatDurationText(days);
+
+    return [
+      i + 1,
+      `"${d.custom_sn || ''}"`,
+      `"${d.original_sn || ''}"`,
+      `"${d.department_id || ''}"`,
+      `"${statusThai}"`,
+      `"${overdueThai}"`,
+      `"${d.model || ''}"`,
+      `"${d.current_staff_id || ''}"`,
+      `"${d.last_action_at || ''}"`,
+      `"${isInCabinet ? 'อยู่ในตู้' : duration}"`,
+      `"${d.notes || ''}"`
+    ].join(',');
+  });
+
+  const csvContent = '\uFEFF' + [headers.join(','), ...rows].join('\r\n');
+  const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `pda_dashboard_inventory_${new Date().toISOString().slice(0, 10)}.csv`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
 }
 
 async function fetchLogs() {
