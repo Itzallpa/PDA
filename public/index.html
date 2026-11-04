@@ -52,10 +52,13 @@
           <!-- Populated dynamically based on departments in database -->
         </div>
       </div>
-      <div style="margin-top: 1.25rem; text-align: center;">
+      <div style="margin-top: 1.25rem; display: flex; justify-content: center; gap: 0.5rem; flex-wrap: wrap;">
         <button type="button" onclick="openModal('system-flow-modal')" style="background: #f1f5f9; border: 1px solid #cbd5e1; color: #1e293b; font-size: 0.82rem; font-weight: 600; cursor: pointer; display: inline-flex; align-items: center; gap: 0.4rem; padding: 0.45rem 0.85rem; border-radius: 6px; transition: background 0.15s;">
           🔄 ผังขั้นตอนการทำงาน (System Flow)
         </button>
+        <a href="/slides.html" target="_blank" style="background: #eff6ff; border: 1px solid #bfdbfe; color: #1d4ed8; font-size: 0.82rem; font-weight: 600; text-decoration: none; display: inline-flex; align-items: center; gap: 0.4rem; padding: 0.45rem 0.85rem; border-radius: 6px; transition: background 0.15s;">
+          📽️ สไลด์นำเสนอ (Slides)
+        </a>
       </div>
     </div>
   </div>
@@ -77,6 +80,7 @@
         <a href="#matrix-view" class="nav-link" onclick="switchMainTab('matrix')">🗄️ ตู้จัดเก็บ</a>
         <a href="#logs-view" class="nav-link" onclick="switchMainTab('logs')">📋 ประวัติการเบิก-คืน</a>
         <button class="btn-secondary" onclick="openModal('system-flow-modal')" title="ผังและขั้นตอนการทำงานของระบบ">🔄 Flow การทำงาน</button>
+        <a href="/slides.html" target="_blank" class="btn-secondary" style="text-decoration: none; display: inline-flex; align-items: center; gap: 0.35rem;" title="เปิดสไลด์นำเสนอ Problem Statement & Solutions">📽️ สไลด์นำเสนอ</a>
         <button class="btn-secondary" onclick="openAddDeptModal()" title="เพิ่มตู้จัดเก็บประจำแผนกใหม่">➕ เพิ่มตู้/แผนก</button>
         <button class="btn-secondary" onclick="openImportModal()">นำเข้าไฟล์ SN</button>
         <button class="nav-btn" onclick="openAddDeviceModal()">+ เพิ่ม PDA</button>

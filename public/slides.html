@@ -1,0 +1,890 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>PDA Storage & Cabinet Tracking System — Problem Statement & Solution Presentation</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Prompt:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+  <style>
+    :root {
+      --bg-dark: #090d16;
+      --bg-card: rgba(18, 25, 41, 0.85);
+      --bg-card-border: rgba(255, 255, 255, 0.08);
+      --text-main: #f8fafc;
+      --text-muted: #94a3b8;
+      --primary: #3b82f6;
+      --primary-glow: rgba(59, 130, 246, 0.35);
+      --success: #10b981;
+      --danger: #ef4444;
+      --warning: #f59e0b;
+      --cyan: #06b6d4;
+      --font-body: 'Prompt', 'Plus Jakarta Sans', sans-serif;
+      --font-heading: 'Plus Jakarta Sans', 'Prompt', sans-serif;
+      --font-mono: 'JetBrains Mono', monospace;
+    }
+
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    body {
+      background: var(--bg-dark);
+      color: var(--text-main);
+      font-family: var(--font-body);
+      overflow: hidden;
+      width: 100vw;
+      height: 100vh;
+      user-select: none;
+    }
+
+    /* Background Ambient Glows */
+    .ambient-glow {
+      position: fixed;
+      width: 600px;
+      height: 600px;
+      border-radius: 50%;
+      filter: blur(140px);
+      pointer-events: none;
+      z-index: 0;
+      opacity: 0.18;
+    }
+    .glow-1 { top: -100px; left: -100px; background: #3b82f6; }
+    .glow-2 { bottom: -100px; right: -100px; background: #10b981; }
+
+    /* 16:9 Deck Wrapper */
+    .deck-container {
+      position: relative;
+      width: 100vw;
+      height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 1;
+    }
+
+    .slide-deck {
+      position: relative;
+      width: 100%;
+      height: 100%;
+      max-width: calc(100vh * 16 / 9);
+      max-height: calc(100vw * 9 / 16);
+      aspect-ratio: 16 / 9;
+      background: radial-gradient(circle at 50% 20%, rgba(30, 41, 69, 0.45) 0%, rgba(9, 13, 22, 0.95) 100%);
+      border: 1px solid var(--bg-card-border);
+      overflow: hidden;
+      box-shadow: 0 25px 60px -15px rgba(0, 0, 0, 0.7);
+    }
+
+    /* Slides */
+    .slide {
+      position: absolute;
+      inset: 0;
+      padding: clamp(2rem, 4.5vw, 4rem);
+      display: flex;
+      flex-direction: column;
+      opacity: 0;
+      visibility: hidden;
+      transform: scale(0.97) translateY(12px);
+      transition: all 0.45s cubic-bezier(0.16, 1, 0.3, 1);
+      overflow: hidden;
+    }
+
+    .slide.active {
+      opacity: 1;
+      visibility: visible;
+      transform: scale(1) translateY(0);
+    }
+
+    /* Slide Header */
+    .slide-tag {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.4rem;
+      padding: 0.25rem 0.75rem;
+      background: rgba(59, 130, 246, 0.12);
+      border: 1px solid rgba(59, 130, 246, 0.3);
+      color: #60a5fa;
+      border-radius: 9999px;
+      font-size: 0.8rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      margin-bottom: 0.75rem;
+      width: fit-content;
+    }
+
+    .slide-tag.danger {
+      background: rgba(239, 68, 68, 0.12);
+      border-color: rgba(239, 68, 68, 0.35);
+      color: #f87171;
+    }
+
+    .slide-tag.success {
+      background: rgba(16, 185, 129, 0.12);
+      border-color: rgba(16, 185, 129, 0.35);
+      color: #34d399;
+    }
+
+    .slide-title {
+      font-family: var(--font-heading);
+      font-size: clamp(1.8rem, 3.2vw, 2.7rem);
+      font-weight: 800;
+      line-height: 1.15;
+      margin-bottom: 0.5rem;
+      letter-spacing: -0.02em;
+    }
+
+    .slide-title span.highlight {
+      background: linear-gradient(135deg, #60a5fa 0%, #38bdf8 50%, #818cf8 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+
+    .slide-title span.danger-highlight {
+      background: linear-gradient(135deg, #f87171 0%, #fb923c 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+
+    .slide-subtitle {
+      font-size: clamp(0.9rem, 1.35vw, 1.15rem);
+      color: var(--text-muted);
+      line-height: 1.5;
+      margin-bottom: 1.5rem;
+      max-width: 900px;
+    }
+
+    /* Content Area */
+    .slide-body {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      min-height: 0;
+    }
+
+    /* Grid Layouts */
+    .grid-2 {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 1.5rem;
+      height: 100%;
+    }
+
+    .grid-3 {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 1.25rem;
+      height: 100%;
+    }
+
+    .grid-4 {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 1rem;
+      height: 100%;
+    }
+
+    /* Modern Cards */
+    .card {
+      background: var(--bg-card);
+      border: 1px solid var(--bg-card-border);
+      border-radius: 12px;
+      padding: clamp(1rem, 1.8vw, 1.5rem);
+      display: flex;
+      flex-direction: column;
+      position: relative;
+      backdrop-filter: blur(10px);
+      transition: all 0.25s ease;
+    }
+
+    .card:hover {
+      border-color: rgba(255, 255, 255, 0.18);
+      transform: translateY(-2px);
+      box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.4);
+    }
+
+    .card-icon {
+      font-size: 1.8rem;
+      margin-bottom: 0.65rem;
+      display: inline-block;
+    }
+
+    .card-title {
+      font-size: clamp(0.95rem, 1.2vw, 1.15rem);
+      font-weight: 700;
+      margin-bottom: 0.4rem;
+      color: #fff;
+    }
+
+    .card-desc {
+      font-size: clamp(0.78rem, 0.95vw, 0.9rem);
+      color: var(--text-muted);
+      line-height: 1.5;
+    }
+
+    .card.danger-card {
+      border-left: 4px solid var(--danger);
+      background: linear-gradient(180deg, rgba(239, 68, 68, 0.08) 0%, rgba(18, 25, 41, 0.85) 100%);
+    }
+
+    .card.success-card {
+      border-left: 4px solid var(--success);
+      background: linear-gradient(180deg, rgba(16, 185, 129, 0.08) 0%, rgba(18, 25, 41, 0.85) 100%);
+    }
+
+    .card.warning-card {
+      border-left: 4px solid var(--warning);
+      background: linear-gradient(180deg, rgba(245, 158, 11, 0.08) 0%, rgba(18, 25, 41, 0.85) 100%);
+    }
+
+    .card.primary-card {
+      border-left: 4px solid var(--primary);
+      background: linear-gradient(180deg, rgba(59, 130, 246, 0.08) 0%, rgba(18, 25, 41, 0.85) 100%);
+    }
+
+    /* Metric Highlight Box */
+    .metric-value {
+      font-family: var(--font-heading);
+      font-size: clamp(1.8rem, 2.8vw, 2.5rem);
+      font-weight: 800;
+      color: #fff;
+      line-height: 1;
+      margin: 0.4rem 0;
+    }
+    .metric-value.good { color: #34d399; }
+    .metric-value.bad { color: #f87171; }
+
+    /* Steps Chain */
+    .step-pill {
+      background: rgba(255, 255, 255, 0.04);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      border-radius: 8px;
+      padding: 0.85rem 1rem;
+      display: flex;
+      align-items: center;
+      gap: 0.85rem;
+      margin-bottom: 0.65rem;
+    }
+    .step-num-badge {
+      width: 28px;
+      height: 28px;
+      border-radius: 50%;
+      background: var(--primary);
+      color: #fff;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: 700;
+      font-size: 0.85rem;
+      flex-shrink: 0;
+    }
+
+    /* Bottom Controls */
+    .deck-controls {
+      position: absolute;
+      bottom: 1.25rem;
+      left: clamp(2rem, 4.5vw, 4rem);
+      right: clamp(2rem, 4.5vw, 4rem);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      z-index: 10;
+      border-top: 1px solid rgba(255, 255, 255, 0.06);
+      padding-top: 0.85rem;
+    }
+
+    .brand-mark {
+      font-size: 0.82rem;
+      color: var(--text-muted);
+      display: flex;
+      align-items: center;
+      gap: 0.4rem;
+      font-weight: 500;
+    }
+
+    .nav-dots {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+
+    .dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: rgba(255, 255, 255, 0.2);
+      cursor: pointer;
+      transition: all 0.25s ease;
+    }
+    .dot.active {
+      width: 24px;
+      border-radius: 9999px;
+      background: var(--primary);
+    }
+
+    .btn-nav-group {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+
+    .btn-nav {
+      background: rgba(255, 255, 255, 0.06);
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      color: #fff;
+      padding: 0.4rem 0.85rem;
+      border-radius: 6px;
+      font-size: 0.8rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.2s;
+      display: inline-flex;
+      align-items: center;
+      gap: 0.35rem;
+    }
+
+    .btn-nav:hover {
+      background: rgba(255, 255, 255, 0.15);
+      border-color: rgba(255, 255, 255, 0.25);
+    }
+
+    .btn-nav:disabled {
+      opacity: 0.3;
+      cursor: not-allowed;
+    }
+
+    /* Key Help Tooltip */
+    .key-hint {
+      font-size: 0.72rem;
+      color: #64748b;
+      margin-left: 0.5rem;
+    }
+
+    /* Chart Container */
+    .chart-container {
+      position: relative;
+      width: 100%;
+      height: 100%;
+      max-height: 250px;
+    }
+  </style>
+</head>
+<body>
+
+  <div class="ambient-glow glow-1"></div>
+  <div class="ambient-glow glow-2"></div>
+
+  <div class="deck-container">
+    <div class="slide-deck" id="slide-deck">
+
+      <!-- SLIDE 1: Title & Cover -->
+      <div class="slide active" data-index="0">
+        <div class="slide-tag">PROJECT PROPOSAL & ARCHITECTURE</div>
+        <h1 class="slide-title">
+          PDA Storage & Cabinet<br>
+          <span class="highlight">Management System</span>
+        </h1>
+        <p class="slide-subtitle">
+          ระบบบริหารจัดการตู้จัดเก็บ แท่นชาร์จ และติดตามสถานะอุปกรณ์ PDA ประจำแผนกแบบเรียลไทม์<br>
+          แก้ไขปัญหาอุปกรณ์สูญหาย ยิงเบิก-คืนผิดตู้ และลดต้นทุนการดำเนินงานในคลังสินค้า
+        </p>
+
+        <div class="slide-body">
+          <div class="grid-3" style="max-height: 180px;">
+            <div class="card primary-card">
+              <span class="card-icon">⚡</span>
+              <div class="card-title">Real-Time Asset Tracking</div>
+              <div class="card-desc">ตรวจสอบสถานะเครื่องในตู้ 🟢 หรือเบิกใช้ 🔴 ได้ทันทีทั้ง 13 แผนก</div>
+            </div>
+            <div class="card warning-card">
+              <span class="card-icon">🛡️</span>
+              <div class="card-title">Department Isolation Guard</div>
+              <div class="card-desc">ระบบบล็อกการยิงข้ามตู้ พร้อมเสียง Siren แจ้งเตือนเมื่อผิดสังกัด</div>
+            </div>
+            <div class="card success-card">
+              <span class="card-icon">☁️</span>
+              <div class="card-title">Cloud Auto-Sync & Keep-Alive</div>
+              <div class="card-desc">ซิงค์ความเร็วสูงกับ Turso Cloud ป้องกันข้อมูลสูญหาย 100%</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- SLIDE 2: Problem Statement -->
+      <div class="slide" data-index="1">
+        <div class="slide-tag danger">PROBLEM STATEMENT</div>
+        <h2 class="slide-title">
+          ปัญหาหลักที่พบในคลังสินค้า<br>
+          <span class="danger-highlight">(The 4 Core Pain Points)</span>
+        </h2>
+        <p class="slide-subtitle">
+          การบริหารจัดการอุปกรณ์ PDA จำนวนกว่า 340+ เครื่อง โดยไม่มีระบบควบคุมตู้จัดเก็บแบบดิจิทัล
+        </p>
+
+        <div class="slide-body">
+          <div class="grid-4" style="max-height: 250px;">
+            <div class="card danger-card">
+              <span class="card-icon">🔍</span>
+              <div class="card-title">1. เครื่องสูญหาย ไร้ผู้รับผิดชอบ</div>
+              <div class="card-desc">
+                ไม่มีบันทึกว่าพนักงานคนใดถือครองเครื่องล่าสุด เมื่อเครื่องหายต้องใช้เวลาหลายวันในการสืบหา หรือสูญหายถาวร
+              </div>
+            </div>
+
+            <div class="card danger-card">
+              <span class="card-icon">🔀</span>
+              <div class="card-title">2. อุปกรณ์กระจายมั่วตู้ / ข้ามแผนก</div>
+              <div class="card-desc">
+                เครื่องของ Inbound ถูกหยิบไปใช้นอกแผนก แล้วนำไปวางทิ้งไว้ ทำให้แผนกเจ้าของเครื่องขาดแคลนอุปกรณ์ช่วงเร่งด่วน
+              </div>
+            </div>
+
+            <div class="card danger-card">
+              <span class="card-icon">⏳</span>
+              <div class="card-title">3. เบิกค้างเกินกำหนด (>3 วัน)</div>
+              <div class="card-desc">
+                พนักงานนำเครื่องกลับบ้านหรือเก็บไว้ในล็อกเกอร์ส่วนตัว ไม่นำมาเสียบชาร์จในตู้ ทำให้แบตเตอรี่เสื่อมและเครื่องไม่หมุนเวียน
+              </div>
+            </div>
+
+            <div class="card danger-card">
+              <span class="card-icon">📉</span>
+              <div class="card-title">4. ไร้ Visibility ตรวจนับช้า</div>
+              <div class="card-desc">
+                หัวหน้างานไม่ทราบจำนวนเครื่องพร้อมใช้แบบ Real-time ต้องเดินนับตู้ด้วยมือทุกกะ เสียเวลาส่งมอบงานมากกว่า 30-45 นาที/วัน
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- SLIDE 3: Impact Analysis & Data -->
+      <div class="slide" data-index="2">
+        <div class="slide-tag danger">IMPACT & ROOT CAUSES</div>
+        <h2 class="slide-title">
+          ผลกระทบต่อต้นทุนและประสิทธิภาพ<br>
+          <span class="danger-highlight">Impact vs Target Benchmark</span>
+        </h2>
+        <p class="slide-subtitle">
+          เปรียบเทียบตัวชี้วัดประสิทธิภาพก่อนและหลังนำระบบ PDA Storage System เข้ามาใช้งาน
+        </p>
+
+        <div class="slide-body">
+          <div class="grid-2" style="max-height: 260px;">
+            <div class="card">
+              <div style="font-size: 0.9rem; font-weight: 700; color: #cbd5e1; margin-bottom: 0.5rem;">
+                📊 สถิติเวลาตรวจนับและความสูญเสียต่อเดือน (Before vs After)
+              </div>
+              <div class="chart-container">
+                <canvas id="impactChart"></canvas>
+              </div>
+            </div>
+
+            <div style="display: flex; flex-direction: column; gap: 0.75rem;">
+              <div class="card danger-card" style="padding: 0.9rem;">
+                <div style="font-size: 0.78rem; color: #fca5a5; font-weight: 600;">ความเสี่ยงด้านต้นทุน (Financial Loss)</div>
+                <div class="metric-value bad">฿150,000+ / ปี</div>
+                <div style="font-size: 0.78rem; color: #94a3b8;">จากค่าซ่อมบำรุงและจัดซื้อเครื่องทดแทนอุปกรณ์ที่สูญหายหรือถูกทิ้งจนแบตเตอรี่เสียหาย</div>
+              </div>
+
+              <div class="card success-card" style="padding: 0.9rem;">
+                <div style="font-size: 0.78rem; color: #86efac; font-weight: 600;">เป้าหมายหลังติดตั้งระบบ (Target KPI)</div>
+                <div class="metric-value good">100% Tracking</div>
+                <div style="font-size: 0.78rem; color: #94a3b8;">ตรวจสอบผู้ถือครองได้ทันที ทราบสถานะแบตเตอรี่และตู้จัดเก็บ ตัดยอดสูญหายเป็น 0</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- SLIDE 4: The Proposed Solution -->
+      <div class="slide" data-index="3">
+        <div class="slide-tag success">SOLUTION ARCHITECTURE</div>
+        <h2 class="slide-title">
+          โซลูชันระบบตู้จัดเก็บ PDA อัจฉริยะ<br>
+          <span class="highlight">All-in-One Digital Cabinet Management</span>
+        </h2>
+        <p class="slide-subtitle">
+          ผสานรวมหน้าจอ Kiosk ประจำตู้, ระบบตรวจสอบสังกัดแผนก, และแผงควบคุมส่วนกลาง
+        </p>
+
+        <div class="slide-body">
+          <div class="grid-3" style="max-height: 250px;">
+            <div class="card primary-card">
+              <span class="card-icon">🖥️</span>
+              <div class="card-title">1. Dedicated Kiosk Pages</div>
+              <div class="card-desc">
+                หน้าจอประจำแต่ละตู้แผนก (เช่น <code>/dept/IB</code>, <code>/dept/OBS</code>) สแกน 2 จังหวะ: ยิงรหัสพนักงาน + ยิงเครื่อง รวดเร็วเพียง 2 วินาที/เครื่อง
+              </div>
+            </div>
+
+            <div class="card warning-card">
+              <span class="card-icon">🏷️</span>
+              <div class="card-title">2. Dual SN & QR Tag Engine</div>
+              <div class="card-desc">
+                ผูก Original Factory Serial Number เข้ากับรหัสย่อประจำตู้ (เช่น <code>IB01</code>, <code>OBS05</code>) พิมพ์สติ๊กเกอร์ QR Tag ติดตัวเครื่องได้ทันที
+              </div>
+            </div>
+
+            <div class="card success-card">
+              <span class="card-icon">🚨</span>
+              <div class="card-title">3. Overdue 3-Day Alert Box</div>
+              <div class="card-desc">
+                ดักจับเครื่องที่ถูกเบิกใช้งานนานเกิน 72 ชม. ขึ้นเตือน Highlight สีแดงบน Dashboard ให้หัวหน้างานติดตาม หรือกดคืนตู้ทันทีได้ในคลิกเดียว
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- SLIDE 5: Operational Flow -->
+      <div class="slide" data-index="4">
+        <div class="slide-tag">WORKFLOW & PROCESS</div>
+        <h2 class="slide-title">
+          ผังขั้นตอนการทำงานประจำตู้<br>
+          <span class="highlight">Check-Out & Check-In Workflows</span>
+        </h2>
+        <p class="slide-subtitle">
+          ขั้นตอนเรียบง่าย พนักงานคุ้นเคยได้ทันที ป้องกันความผิดพลาดด้วยระบบเสียงและสัญญาณไฟ
+        </p>
+
+        <div class="slide-body">
+          <div class="grid-2" style="max-height: 250px;">
+            <div class="card" style="border-top: 3px solid #ef4444;">
+              <div style="font-weight: 700; color: #fca5a5; font-size: 0.95rem; margin-bottom: 0.75rem;">
+                📤 ขั้นตอนการเบิกใช้งาน (Check-Out Flow)
+              </div>
+              <div class="step-pill">
+                <span class="step-num-badge">1</span>
+                <div style="font-size: 0.82rem;"><strong>ยิงบัตรพนักงาน (Staff ID)</strong> ระบุตัวตนผู้ถือครอง</div>
+              </div>
+              <div class="step-pill">
+                <span class="step-num-badge">2</span>
+                <div style="font-size: 0.82rem;"><strong>ยิงรหัส PDA (SN / QR Code)</strong> รองรับทั้ง 2 รหัส</div>
+              </div>
+              <div class="step-pill" style="background: rgba(239, 68, 68, 0.1); border-color: rgba(239, 68, 68, 0.25);">
+                <span class="step-num-badge" style="background: #ef4444;">✓</span>
+                <div style="font-size: 0.82rem; color: #fca5a5;"><strong>บันทึกสถานะ 🔴 เบิกใช้งาน</strong> ส่งเสียง Chime สำเร็จ</div>
+              </div>
+            </div>
+
+            <div class="card" style="border-top: 3px solid #10b981;">
+              <div style="font-weight: 700; color: #86efac; font-size: 0.95rem; margin-bottom: 0.75rem;">
+                📥 ขั้นตอนการคืนเข้าตู้ชาร์จ (Check-In Flow)
+              </div>
+              <div class="step-pill">
+                <span class="step-num-badge" style="background: #10b981;">1</span>
+                <div style="font-size: 0.82rem;"><strong>กดโหมด "คืนเข้าตู้"</strong> หน้าจอประจำตู้</div>
+              </div>
+              <div class="step-pill">
+                <span class="step-num-badge" style="background: #10b981;">2</span>
+                <div style="font-size: 0.82rem;"><strong>ยิงรหัส PDA เสียบเข้าช่องชาร์จ</strong> ไม่ต้องสแกนบัตรพนักงาน</div>
+              </div>
+              <div class="step-pill" style="background: rgba(16, 185, 129, 0.1); border-color: rgba(16, 185, 129, 0.25);">
+                <span class="step-num-badge" style="background: #10b981;">✓</span>
+                <div style="font-size: 0.82rem; color: #86efac;"><strong>บันทึกสถานะ 🟢 ในตู้พร้อมใช้</strong> ปลดล็อกผู้ถือครองอัตโนมัติ</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- SLIDE 6: Department Isolation Guard -->
+      <div class="slide" data-index="5">
+        <div class="slide-tag danger">SECURITY & INTEGRITY</div>
+        <h2 class="slide-title">
+          ระบบป้องกันการยิงข้ามตู้<br>
+          <span class="danger-highlight">Department Isolation Guard</span>
+        </h2>
+        <p class="slide-subtitle">
+          แก้ปัญหานำเครื่องไปวางผิดที่หรือสลับแผนกโดยไม่ได้รับอนุญาต
+        </p>
+
+        <div class="slide-body">
+          <div class="grid-3" style="max-height: 240px;">
+            <div class="card danger-card">
+              <span class="card-icon">🚫</span>
+              <div class="card-title">1. ตรวจสอบตู้สังกัดทันที</div>
+              <div class="card-desc">
+                เมื่อยิงเครื่องที่หน้าตู้ ระบบจะเช็กว่าเครื่องสังกัดตู้แผนกนี้หรือไม่ (เช่น รหัส IB นำมายิงที่หน้าตู้ OBS)
+              </div>
+            </div>
+
+            <div class="card danger-card">
+              <span class="card-icon">🚨</span>
+              <div class="card-title">2. ปฏิเสธรายการ (REJECT)</div>
+              <div class="card-desc">
+                ระบบปฏิเสธรายการทันที ไม่อนุญาตให้เปลี่ยนสถานะ พร้อมเปิดเสียงสัญญาณเตือนไซเรน (Buzzer Alarm) เสียงดัง
+              </div>
+            </div>
+
+            <div class="card danger-card">
+              <span class="card-icon">🧭</span>
+              <div class="card-title">3. แจ้งเตือนตู้ที่ถูกต้อง</div>
+              <div class="card-desc">
+                หน้าจอแสดงการ์ดสีแดงระบุชื่อแผนกที่แท้จริงของอุปกรณ์ เพื่อให้พนักงานนำกลับไปคืนหรือเบิกที่ตู้ตนเองอย่างถูกต้อง
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- SLIDE 7: High-Speed Tech & Turso Cloud -->
+      <div class="slide" data-index="6">
+        <div class="slide-tag success">TECH STACK & RESILIENCE</div>
+        <h2 class="slide-title">
+          สถาปัตยกรรมระดับองค์กร<br>
+          <span class="highlight">Dual-Tier High Reliability Engine</span>
+        </h2>
+        <p class="slide-subtitle">
+          ตอบสนองรวดเร็วในระดับไมโครวินาที พร้อมระบบสำรองข้อมูลบน Cloud ตลอด 24 ชั่วโมง
+        </p>
+
+        <div class="slide-body">
+          <div class="grid-3" style="max-height: 250px;">
+            <div class="card primary-card">
+              <span class="card-icon">⚡</span>
+              <div class="card-title">Native SQLite in Node.js 24</div>
+              <div class="card-desc">
+                ใช้ <code>node:sqlite</code> ในตัวแบบ WAL Mode เขียน-อ่านข้อมูลได้เร็วกว่า 10,000 ops/วินาที ทำงานได้แม้เครือข่ายภายนอกขัดข้อง
+              </div>
+            </div>
+
+            <div class="card success-card">
+              <span class="card-icon">☁️</span>
+              <div class="card-title">Turso Cloud Real-Time Sync</div>
+              <div class="card-desc">
+                ซิงค์ข้อมูลกับ Turso Cloud (AWS ap-southeast-1) แบบ 2 ทิศทาง ข้อมูลปลอดภัยจากฮาร์ดแวร์เสียหาย 100%
+              </div>
+            </div>
+
+            <div class="card warning-card">
+              <span class="card-icon">🌐</span>
+              <div class="card-title">Multi-Access & Mobile Camera</div>
+              <div class="card-desc">
+                เปิดใช้งานผ่าน LAN วงคลังสินค้า, Render Cloud Web, หรือเปิดกล้องมือถือ/แท็บเล็ตสแกนได้โดยไม่ต้องซื้อเครื่องยิงเพิ่ม
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- SLIDE 8: Summary & Expected ROI -->
+      <div class="slide" data-index="7">
+        <div class="slide-tag success">PROJECT SUMMARY & VALUE</div>
+        <h2 class="slide-title">
+          สรุปผลลัพธ์และความคุ้มค่า<br>
+          <span class="highlight">Expected ROI & Deliverables</span>
+        </h2>
+        <p class="slide-subtitle">
+          ยกระดับการบริหารจัดการทรัพย์สินในคลังสินค้าสู่มาตรฐานดิจิทัลเต็มรูปแบบ
+        </p>
+
+        <div class="slide-body">
+          <div class="grid-4" style="max-height: 250px;">
+            <div class="card success-card">
+              <div class="metric-value good">0 เครื่อง</div>
+              <div class="card-title">อัตราการสูญหาย</div>
+              <div class="card-desc">ทราบผู้ถือครองและตำแหน่งตู้ตลอด 24 ชั่วโมง</div>
+            </div>
+
+            <div class="card success-card">
+              <div class="metric-value good">85%</div>
+              <div class="card-title">ลดเวลาตรวจนับ</div>
+              <div class="card-desc">ตัดรอบตรวจนับจาก 45 นาที เหลือเพียง 3-5 นาที/กะ</div>
+            </div>
+
+            <div class="card success-card">
+              <div class="metric-value good">100%</div>
+              <div class="card-title">ความพร้อมใช้งาน</div>
+              <div class="card-desc">ขจัดปัญหาเครื่องค้างนาน แบตเตอรี่หมดช่วงเร่งด่วน</div>
+            </div>
+
+            <div class="card primary-card">
+              <div class="metric-value good">Ready</div>
+              <div class="card-title">พร้อมใช้งานทันที</div>
+              <div class="card-desc">ระบบ Deploy บน Render พร้อมฐานข้อมูล 346 เครื่อง</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Presentation Controls -->
+      <div class="deck-controls">
+        <div class="brand-mark">
+          <span style="background: #3b82f6; color: #fff; padding: 2px 6px; border-radius: 4px; font-weight: 700; font-size: 0.72rem;">PDA</span>
+          <span>Storage & Cabinet Management System</span>
+          <span class="key-hint">(กดปุ่ม ← / → หรือคลิกเพื่อเปลี่ยนสไลด์)</span>
+        </div>
+
+        <div class="nav-dots" id="nav-dots">
+          <!-- Populated by JS -->
+        </div>
+
+        <div class="btn-nav-group">
+          <button class="btn-nav" id="btn-prev" onclick="prevSlide()">← ก่อนหน้า</button>
+          <button class="btn-nav" id="btn-next" onclick="nextSlide()">ถัดไป →</button>
+          <button class="btn-nav" id="btn-fullscreen" onclick="toggleFullscreen()" title="โหมดเต็มจอ">⛶</button>
+          <a href="/" class="btn-nav" style="text-decoration: none;">🏠 หน้าหลัก</a>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <script>
+    let currentSlide = 0;
+    const slides = document.querySelectorAll('.slide');
+    const totalSlides = slides.length;
+    const dotsContainer = document.getElementById('nav-dots');
+
+    // Create nav dots
+    for (let i = 0; i < totalSlides; i++) {
+      const dot = document.createElement('div');
+      dot.className = 'dot' + (i === 0 ? ' active' : '');
+      dot.onclick = () => goToSlide(i);
+      dotsContainer.appendChild(dot);
+    }
+
+    function updateSlide() {
+      slides.forEach((s, idx) => {
+        if (idx === currentSlide) {
+          s.classList.add('active');
+        } else {
+          s.classList.remove('active');
+        }
+      });
+
+      document.querySelectorAll('.dot').forEach((d, idx) => {
+        if (idx === currentSlide) {
+          d.classList.add('active');
+        } else {
+          d.classList.remove('active');
+        }
+      });
+
+      document.getElementById('btn-prev').disabled = currentSlide === 0;
+      document.getElementById('btn-next').disabled = currentSlide === totalSlides - 1;
+
+      // Render chart on Slide 3 (index 2)
+      if (currentSlide === 2) {
+        initImpactChart();
+      }
+    }
+
+    function nextSlide() {
+      if (currentSlide < totalSlides - 1) {
+        currentSlide++;
+        updateSlide();
+      }
+    }
+
+    function prevSlide() {
+      if (currentSlide > 0) {
+        currentSlide--;
+        updateSlide();
+      }
+    }
+
+    function goToSlide(idx) {
+      if (idx >= 0 && idx < totalSlides) {
+        currentSlide = idx;
+        updateSlide();
+      }
+    }
+
+    // Keyboard Navigation
+    window.addEventListener('keydown', (e) => {
+      if (e.key === 'ArrowRight' || e.key === ' ' || e.key === 'PageDown') {
+        e.preventDefault();
+        nextSlide();
+      } else if (e.key === 'ArrowLeft' || e.key === 'PageUp') {
+        e.preventDefault();
+        prevSlide();
+      } else if (e.key === 'f' || e.key === 'F') {
+        toggleFullscreen();
+      }
+    });
+
+    // Fullscreen toggle
+    function toggleFullscreen() {
+      if (!document.fullscreenElement) {
+        document.documentElement.requestFullscreen().catch(() => {});
+      } else {
+        if (document.exitFullscreen) document.exitFullscreen();
+      }
+    }
+
+    // Chart.js for Slide 3
+    let impactChartInstance = null;
+    function initImpactChart() {
+      if (impactChartInstance) return;
+      const ctx = document.getElementById('impactChart');
+      if (!ctx) return;
+
+      impactChartInstance = new Chart(ctx, {
+        type: 'bar',
+        data: {
+          labels: ['เวลาตรวจนับ/กะ (นาที)', 'เครื่องค้าง/เดือน (เครื่อง)', 'อัตราหาเครื่องไม่เจอ (%)'],
+          datasets: [
+            {
+              label: 'ก่อนมีระบบ (Before)',
+              data: [45, 28, 35],
+              backgroundColor: 'rgba(239, 68, 68, 0.75)',
+              borderColor: '#ef4444',
+              borderWidth: 1.5,
+              borderRadius: 6
+            },
+            {
+              label: 'หลังติดตั้งระบบ (After)',
+              data: [5, 2, 0],
+              backgroundColor: 'rgba(16, 185, 129, 0.75)',
+              borderColor: '#10b981',
+              borderWidth: 1.5,
+              borderRadius: 6
+            }
+          ]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: {
+            legend: {
+              labels: {
+                color: '#cbd5e1',
+                font: { family: 'Prompt', size: 12 }
+              }
+            }
+          },
+          scales: {
+            x: {
+              ticks: { color: '#94a3b8', font: { family: 'Prompt', size: 11 } },
+              grid: { color: 'rgba(255, 255, 255, 0.05)' }
+            },
+            y: {
+              ticks: { color: '#94a3b8', font: { family: 'Prompt', size: 11 } },
+              grid: { color: 'rgba(255, 255, 255, 0.05)' }
+            }
+          }
+        }
+      });
+    }
+
+    // Click on slide background to advance
+    document.getElementById('slide-deck').addEventListener('click', (e) => {
+      if (e.target.closest('.deck-controls') || e.target.closest('button') || e.target.closest('a')) return;
+      const rect = e.currentTarget.getBoundingClientRect();
+      const clickX = e.clientX - rect.left;
+      if (clickX > rect.width / 2) {
+        nextSlide();
+      } else {
+        prevSlide();
+      }
+    });
+
+    updateSlide();
+  </script>
+</body>
+</html>
