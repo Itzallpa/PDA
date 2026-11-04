@@ -1153,3 +1153,14 @@ function closeCameraScanner() {
     }).catch(err => console.warn(err));
   }
 }
+
+
+function openModal(id) {
+  const m = document.getElementById(id);
+  if (m) m.classList.add('open');
+}
+
+function closeModal(id) {
+  const m = document.getElementById(id);
+  if (m) m.classList.remove('open');
+}

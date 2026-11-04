@@ -25,6 +25,7 @@
       <select id="quick-dept-select" class="btn-secondary" style="font-size: 0.82rem; padding: 0.35rem 0.65rem; background: #ffffff; color: var(--text-main); font-weight: 600;" onchange="if(this.value) window.location.href='/dept/' + encodeURIComponent(this.value)">
         <!-- Populated dynamically with all created departments -->
       </select>
+      <button class="btn-secondary" onclick="openModal('kiosk-flow-modal')" style="font-size: 0.82rem; padding: 0.3rem 0.65rem;" title="ขั้นตอนการใช้งานตู้">📖 ขั้นตอนใช้งาน</button>
       <button class="btn-secondary" id="sound-toggle-btn" onclick="toggleSound()" style="font-size: 0.82rem; padding: 0.3rem 0.65rem;">
         เสียง: เปิด
       </button>
@@ -190,5 +191,98 @@
   <script src="/js/audio.js"></script>
   <!-- Department Kiosk Logic -->
   <script src="/js/dept.js?v=2.4.2"></script>
+
+  <!-- Kiosk Workflow Modal -->
+  <div class="modal-overlay" id="kiosk-flow-modal">
+    <div class="modal-card" style="max-width: 760px;">
+      <div class="modal-header" style="background: #f8fafc;">
+        <div style="display: flex; align-items: center; gap: 0.5rem;">
+          <span style="font-size: 1.25rem;">📖</span>
+          <h3 style="margin: 0; font-size: 1.05rem; font-weight: 700; color: #0f172a;">
+            ขั้นตอนการใช้งานตู้จัดเก็บ PDA (Kiosk Guide)
+          </h3>
+        </div>
+        <button class="btn-icon" onclick="closeModal('kiosk-flow-modal')">✕</button>
+      </div>
+      <div class="modal-body" style="padding: 1.25rem;">
+        <div class="flow-diagram-wrapper">
+          <!-- Flow 1: Out -->
+          <div class="flow-section-card">
+            <div class="flow-header">
+              <span>📤 <strong>การเบิกเครื่องออกไปใช้งาน (Check-Out)</strong></span>
+              <span class="badge" style="background: #fee2e2; color: #dc2626; font-size: 0.75rem;">ไฟสถานะเปลี่ยนเป็น สีแดง 🔴</span>
+            </div>
+            <div class="flow-steps-row">
+              <div class="flow-step-card">
+                <span class="flow-step-num">1</span>
+                <span class="flow-step-title">เลือกโหมดเบิกออก</span>
+                <span class="flow-step-desc">กดปุ่ม "เบิกออก" (แถบสีส้มด้านบน)</span>
+              </div>
+              <div class="flow-arrow-divider">→</div>
+              <div class="flow-step-card">
+                <span class="flow-step-num">2</span>
+                <span class="flow-step-title">ยิงบัตรพนักงาน</span>
+                <span class="flow-step-desc">ยิงบาร์โค้ด Staff ID ของผู้ที่จะนำเครื่องไปใช้</span>
+              </div>
+              <div class="flow-arrow-divider">→</div>
+              <div class="flow-step-card">
+                <span class="flow-step-num">3</span>
+                <span class="flow-step-title">ยิงรหัส PDA</span>
+                <span class="flow-step-desc">ยิงบาร์โค้ดเครื่อง (Original SN หรือ QR Tag)</span>
+              </div>
+              <div class="flow-arrow-divider">→</div>
+              <div class="flow-step-card success">
+                <span class="flow-step-num">✓</span>
+                <span class="flow-step-title">รับเครื่องทันที</span>
+                <span class="flow-step-desc">ระบบส่งเสียง Chime ยืนยัน นำเครื่องไปใช้ได้ทันที</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Flow 2: In -->
+          <div class="flow-section-card">
+            <div class="flow-header">
+              <span>📥 <strong>การคืนเครื่องเข้าตู้ชาร์จ (Check-In)</strong></span>
+              <span class="badge" style="background: #dcfce7; color: #16a34a; font-size: 0.75rem;">ไฟสถานะเปลี่ยนเป็น สีเขียว 🟢</span>
+            </div>
+            <div class="flow-steps-row">
+              <div class="flow-step-card">
+                <span class="flow-step-num">1</span>
+                <span class="flow-step-title">เลือกโหมดคืนตู้</span>
+                <span class="flow-step-desc">กดปุ่ม "คืนเข้าตู้" (แถบสีเขียวด้านบน)</span>
+              </div>
+              <div class="flow-arrow-divider">→</div>
+              <div class="flow-step-card">
+                <span class="flow-step-num">2</span>
+                <span class="flow-step-title">ยิงรหัส PDA</span>
+                <span class="flow-step-desc">ยิงบาร์โค้ดเครื่อง แล้วเสียบเข้าช่องชาร์จ</span>
+              </div>
+              <div class="flow-arrow-divider">→</div>
+              <div class="flow-step-card success">
+                <span class="flow-step-num">✓</span>
+                <span class="flow-step-title">เสร็จสิ้น</span>
+                <span class="flow-step-desc">ระบบบันทึกเวลาคืน ปลดล็อกผู้ถือครองอัตโนมัติ</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Alert Note -->
+          <div class="flow-section-card" style="border-left: 4px solid #ef4444; background: #fff5f5;">
+            <div style="font-size: 0.85rem; font-weight: 700; color: #b91c1c; margin-bottom: 0.3rem;">
+              🛡️ ข้อควรระวัง: ห้ามยิงข้ามตู้ประจำแผนก
+            </div>
+            <div style="font-size: 0.78rem; color: #7f1d1d; line-height: 1.45;">
+              เครื่องสังกัดแผนกใด ต้องนำมาเบิกและคืนที่ตู้แผนกนั้นเท่านั้น หากยิงข้ามตู้ระบบจะส่งเสียงไซเรนเตือน (Buzzer) และไม่อนุญาตให้ทำรายการ
+            </div>
+          </div>
+
+        </div>
+      </div>
+      <div class="modal-footer" style="background: #f8fafc;">
+        <button type="button" class="btn-primary" onclick="closeModal('kiosk-flow-modal')">เข้าใจแล้ว / ปิด</button>
+      </div>
+    </div>
+  </div>
+
 </body>
 </html>

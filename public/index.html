@@ -52,6 +52,11 @@
           <!-- Populated dynamically based on departments in database -->
         </div>
       </div>
+      <div style="margin-top: 1.25rem; text-align: center;">
+        <button type="button" onclick="openModal('system-flow-modal')" style="background: #f1f5f9; border: 1px solid #cbd5e1; color: #1e293b; font-size: 0.82rem; font-weight: 600; cursor: pointer; display: inline-flex; align-items: center; gap: 0.4rem; padding: 0.45rem 0.85rem; border-radius: 6px; transition: background 0.15s;">
+          🔄 ผังขั้นตอนการทำงาน (System Flow)
+        </button>
+      </div>
     </div>
   </div>
 
@@ -71,6 +76,7 @@
         <a href="#dashboard-view" class="nav-link active" onclick="switchMainTab('dashboard')">📊 แดชบอร์ด</a>
         <a href="#matrix-view" class="nav-link" onclick="switchMainTab('matrix')">🗄️ ตู้จัดเก็บ</a>
         <a href="#logs-view" class="nav-link" onclick="switchMainTab('logs')">📋 ประวัติการเบิก-คืน</a>
+        <button class="btn-secondary" onclick="openModal('system-flow-modal')" title="ผังและขั้นตอนการทำงานของระบบ">🔄 Flow การทำงาน</button>
         <button class="btn-secondary" onclick="openAddDeptModal()" title="เพิ่มตู้จัดเก็บประจำแผนกใหม่">➕ เพิ่มตู้/แผนก</button>
         <button class="btn-secondary" onclick="openImportModal()">นำเข้าไฟล์ SN</button>
         <button class="nav-btn" onclick="openAddDeviceModal()">+ เพิ่ม PDA</button>
@@ -808,6 +814,192 @@
   </div>
 
   </div><!-- /admin-main-wrapper -->
+
+  <!-- MODAL: System Workflow & Flowchart -->
+  <div class="modal-overlay" id="system-flow-modal">
+    <div class="modal-card" style="max-width: 840px;">
+      <div class="modal-header" style="background: #f8fafc;">
+        <div style="display: flex; align-items: center; gap: 0.5rem;">
+          <span style="font-size: 1.25rem;">🔄</span>
+          <h3 style="margin: 0; font-size: 1.05rem; font-weight: 700; color: #0f172a;">
+            ผังและขั้นตอนการทำงานของระบบ (System Workflow)
+          </h3>
+        </div>
+        <button class="btn-icon" onclick="closeModal('system-flow-modal')">✕</button>
+      </div>
+      <div class="modal-body" style="max-height: 80vh; overflow-y: auto; padding: 1.25rem;">
+        <div class="flow-diagram-wrapper">
+          
+          <!-- Flow 1: Check-Out -->
+          <div class="flow-section-card">
+            <div class="flow-header">
+              <span style="display: flex; align-items: center; gap: 0.4rem;">
+                <span>📤</span> <strong>1. ขั้นตอนการเบิกเครื่อง PDA (Check-Out Process)</strong>
+              </span>
+              <span class="badge" style="background: #fee2e2; color: #dc2626; font-size: 0.75rem; font-weight: 600;">สถานะหลังเบิก: เบิกใช้งาน 🔴</span>
+            </div>
+            <div class="flow-steps-row">
+              <div class="flow-step-card">
+                <span class="flow-step-num">1</span>
+                <span class="flow-step-title">เลือกโหมดเบิกออก</span>
+                <span class="flow-step-desc">พนักงานไปที่หน้าจอประจำตู้แผนกตนเอง กดเลือกโหมด "เบิกออก"</span>
+              </div>
+              <div class="flow-arrow-divider">→</div>
+              <div class="flow-step-card">
+                <span class="flow-step-num">2</span>
+                <span class="flow-step-title">ยิงรหัสพนักงาน</span>
+                <span class="flow-step-desc">ยิงบาร์โค้ดบัตรพนักงาน (Staff ID) เพื่อระบุตัวตนผู้ถือครองเครื่อง</span>
+              </div>
+              <div class="flow-arrow-divider">→</div>
+              <div class="flow-step-card">
+                <span class="flow-step-num">3</span>
+                <span class="flow-step-title">ยิงรหัส PDA</span>
+                <span class="flow-step-desc">ยิง Barcode หรือ QR Code ของเครื่อง (รองรับทั้ง Original SN หรือ Custom Code)</span>
+              </div>
+              <div class="flow-arrow-divider">→</div>
+              <div class="flow-step-card success">
+                <span class="flow-step-num">✓</span>
+                <span class="flow-step-title">ตรวจสอบ & บันทึกสำเร็จ</span>
+                <span class="flow-step-desc">ระบบตรวจสอบสังกัดตู้ บันทึก Log เวลาเบิก ส่งเสียง Chime และเปลี่ยนเป็นสีแดง</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Flow 2: Check-In -->
+          <div class="flow-section-card">
+            <div class="flow-header">
+              <span style="display: flex; align-items: center; gap: 0.4rem;">
+                <span>📥</span> <strong>2. ขั้นตอนการคืนเครื่องเข้าตู้ (Check-In Process)</strong>
+              </span>
+              <span class="badge" style="background: #dcfce7; color: #16a34a; font-size: 0.75rem; font-weight: 600;">สถานะหลังคืน: ในตู้พร้อมใช้ 🟢</span>
+            </div>
+            <div class="flow-steps-row">
+              <div class="flow-step-card">
+                <span class="flow-step-num">1</span>
+                <span class="flow-step-title">เลือกโหมดคืนตู้</span>
+                <span class="flow-step-desc">กดปุ่ม "คืนเข้าตู้" ที่หน้าจอประจำตู้</span>
+              </div>
+              <div class="flow-arrow-divider">→</div>
+              <div class="flow-step-card">
+                <span class="flow-step-num">2</span>
+                <span class="flow-step-title">ยิงบาร์โค้ด PDA</span>
+                <span class="flow-step-desc">ยิงรหัสตัวเครื่องแล้วเสียบเข้าช่องชาร์จ (ไม่ต้องสแกนบัตรพนักงาน)</span>
+              </div>
+              <div class="flow-arrow-divider">→</div>
+              <div class="flow-step-card">
+                <span class="flow-step-num">3</span>
+                <span class="flow-step-title">ตรวจตู้สังกัด</span>
+                <span class="flow-step-desc">ระบบตรวจว่าเครื่องตรงกับตู้ประจำแผนกนี้หรือไม่เพื่อความปลอดภัย</span>
+              </div>
+              <div class="flow-arrow-divider">→</div>
+              <div class="flow-step-card success">
+                <span class="flow-step-num">✓</span>
+                <span class="flow-step-title">คืนสำเร็จเข้าตู้</span>
+                <span class="flow-step-desc">เคลียร์ชื่อผู้ถือครอง อัปเดตไฟสีเขียว บันทึกประวัติเวลาคืน และส่งเสียง Chime</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Flow 3: Department Isolation Guard -->
+          <div class="flow-section-card" style="border-left: 4px solid #ef4444;">
+            <div class="flow-header">
+              <span style="display: flex; align-items: center; gap: 0.4rem;">
+                <span>🛡️</span> <strong>3. ระบบป้องกันการยิงข้ามตู้ (Department Isolation Guard)</strong>
+              </span>
+              <span class="badge" style="background: #fee2e2; color: #b91c1c; font-size: 0.75rem; font-weight: 700;">ระบบความปลอดภัย</span>
+            </div>
+            <p style="font-size: 0.82rem; color: #475569; margin: 0 0 0.75rem 0; line-height: 1.45;">
+              เพื่อป้องกันอุปกรณ์สูญหายหรือย้ายแผนกโดยไม่ได้รับอนุญาต หากมีการนำ PDA สังกัดตู้แผนกหนึ่ง (เช่น IB) ไปยิงทำรายการที่ตู้ของแผนกอื่น (เช่น OBS):
+            </p>
+            <div class="flow-steps-row">
+              <div class="flow-step-card danger">
+                <span class="flow-step-num">✕</span>
+                <span class="flow-step-title">ปฏิเสธทันที (REJECT)</span>
+                <span class="flow-step-desc">ระบบจะไม่อนุญาตให้ทำรายการ และไม่เปลี่ยนสถานะเครื่อง</span>
+              </div>
+              <div class="flow-arrow-divider">→</div>
+              <div class="flow-step-card danger">
+                <span class="flow-step-num">🔊</span>
+                <span class="flow-step-title">เสียงเตือน Siren</span>
+                <span class="flow-step-desc">ส่งเสียงสัญญาณเตือนภัย Buzzer เสียงดังเพื่อแจ้งให้พนักงานทราบ</span>
+              </div>
+              <div class="flow-arrow-divider">→</div>
+              <div class="flow-step-card danger">
+                <span class="flow-step-num">⚠️</span>
+                <span class="flow-step-title">แจ้งตู้ที่ถูกต้อง</span>
+                <span class="flow-step-desc">แสดงข้อความสีแดงเตือนชัดเจนระบุว่าเครื่องสังกัดตู้แผนกใด ให้นำกลับไปยิงที่ตู้เดิม</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Flow 4: Overdue Alert Tracking -->
+          <div class="flow-section-card" style="border-left: 4px solid #f59e0b;">
+            <div class="flow-header">
+              <span style="display: flex; align-items: center; gap: 0.4rem;">
+                <span>🚨</span> <strong>4. ระบบตรวจจับและติดตามอุปกรณ์ค้างเกิน 3 วัน (Overdue 3-Day Alert)</strong>
+              </span>
+              <span class="badge" style="background: #fef3c7; color: #b45309; font-size: 0.75rem; font-weight: 700;">เกณฑ์ > 72 ชั่วโมง</span>
+            </div>
+            <div class="flow-steps-row">
+              <div class="flow-step-card warn">
+                <span class="flow-step-num">1</span>
+                <span class="flow-step-title">คำนวณอัตโนมัติ</span>
+                <span class="flow-step-desc">ระบบประมวลผลเครื่องที่ถูกเบิก (CHECKED_OUT) นานเกิน 3 วัน (72 ชม.) ตลอดเวลา</span>
+              </div>
+              <div class="flow-arrow-divider">→</div>
+              <div class="flow-step-card warn">
+                <span class="flow-step-num">2</span>
+                <span class="flow-step-title">แสดงเตือนบน Dashboard</span>
+                <span class="flow-step-desc">ขึ้นกล่องเตือนสีแดงเด่นด้านบนสุด ระบุ SN, แผนก, พนักงาน และจำนวนวันที่ค้าง</span>
+              </div>
+              <div class="flow-arrow-divider">→</div>
+              <div class="flow-step-card warn">
+                <span class="flow-step-num">3</span>
+                <span class="flow-step-title">ติดตาม & ปิดสถานะ</span>
+                <span class="flow-step-desc">หัวหน้างานติดตามเครื่อง หรือกด "บันทึกคืนตู้ทันที" ได้โดยตรงจากหน้าจอ</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Flow 5: Real-Time Cloud Sync -->
+          <div class="flow-section-card" style="border-left: 4px solid #0284c7;">
+            <div class="flow-header">
+              <span style="display: flex; align-items: center; gap: 0.4rem;">
+                <span>☁️</span> <strong>5. สถาปัตยกรรมข้อมูลและการซิงค์คลาวด์ (Cloud Sync Architecture)</strong>
+              </span>
+              <span class="badge" style="background: #e0f2fe; color: #0369a1; font-size: 0.75rem; font-weight: 700;">Turso Cloud + Local SQLite</span>
+            </div>
+            <div class="flow-steps-row">
+              <div class="flow-step-card">
+                <span class="flow-step-num">⚡</span>
+                <span class="flow-step-title">Local SQLite Engine</span>
+                <span class="flow-step-desc">บันทึกลง <code>data/pda_storage.db</code> ในเครื่องแม่ทันที ตอบสนองไวแม้ไม่มีเน็ต</span>
+              </div>
+              <div class="flow-arrow-divider">⇄</div>
+              <div class="flow-step-card">
+                <span class="flow-step-num">☁️</span>
+                <span class="flow-step-title">Turso Cloud Database</span>
+                <span class="flow-step-desc">ซิงค์สองทางอัตโนมัติผ่าน LibSQL Cloud ข้อมูลไม่หายและเชื่อมโยงข้ามเครื่องแบบ Real-Time</span>
+              </div>
+              <div class="flow-arrow-divider">⇄</div>
+              <div class="flow-step-card">
+                <span class="flow-step-num">🌐</span>
+                <span class="flow-step-title">Render / Web Deployment</span>
+                <span class="flow-step-desc">ดึงข้อมูลชุดเดียวกันแสดงผลบน Web App ให้ผู้บริหารเปิดตรวจผ่านอินเทอร์เน็ตได้ทุกที่</span>
+              </div>
+            </div>
+          </div>
+
+        </div>
+      </div>
+      <div class="modal-footer" style="background: #f8fafc; justify-content: space-between;">
+        <span style="font-size: 0.8rem; color: #64748b;">
+          💡 ตู้จัดเก็บ PDA กลาง • พัฒนาสำหรับควบคุมความพร้อมใช้งานและป้องกันอุปกรณ์สูญหาย
+        </span>
+        <button type="button" class="btn-primary" onclick="closeModal('system-flow-modal')">รับทราบ / ปิด</button>
+      </div>
+    </div>
+  </div>
 
   <!-- Global Toast Notification -->
   <div id="pda-toast"></div>

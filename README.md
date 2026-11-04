@@ -3,6 +3,90 @@
 
 ---
 
+## 🔄 ผังขั้นตอนการทำงานของระบบ (System Workflow & Architecture Flows)
+
+### 1. ผังการเบิก-คืน PDA ประจำหน้าตู้ (Kiosk Operation & Guard Flow)
+```mermaid
+flowchart TD
+    Start([พนักงานมาที่หน้าตู้ประจำแผนก]) --> Mode{เลือกโหมดการทำงาน}
+
+    %% Check-Out Branch
+    Mode -->|1. เบิกออก (Check-Out)| ScanStaff[1. ยิงบาร์โค้ด / พิมพ์รหัสพนักงาน Staff ID]
+    ScanStaff --> ScanDevOut[2. ยิงบาร์โค้ดเครื่อง PDA\nOriginal SN หรือ Custom Code]
+    ScanDevOut --> CheckDeptOut{เครื่องสังกัดตู้แผนกนี้หรือไม่?}
+
+    CheckDeptOut -->|ไม่ใช่ / ข้ามตู้| RejectOut[❌ ปฏิเสธรายการ REJECT\nส่งเสียงไซเรนเตือน + แสดงกล่องแดง\nห้ามเบิกข้ามตู้]
+    RejectOut --> EndOutFail([ยกเลิกรายการ])
+
+    CheckDeptOut -->|สังกัดตู้ถูกต้อง| CheckStatusOut{สถานะปัจจุบันในระบบ}
+    CheckStatusOut -->|เดิมถูกเบิกอยู่แล้ว| WarnOut[⚠️ แจ้งเตือน: เครื่องมีผู้ถือครองอยู่แล้ว]
+    WarnOut --> ConfirmOut[อัปเดตเป็นผู้ถือครองคนใหม่]
+    CheckStatusOut -->|อยู่ในตู้ IN_CABINET| ConfirmOut
+
+    ConfirmOut --> SaveOut[💾 บันทึกสถานะ: CHECKED_OUT 🔴\nผูก Staff ID + เวลาที่เบิก Timestamp Out\nบันทึก Transaction Log]
+    SaveOut --> CloudSyncOut[☁️ ซิงค์ข้อมูล Real-Time ไปยัง Turso Cloud]
+    CloudSyncOut --> SuccessOut[🔔 ส่งเสียงแจ้งเตือนสำเร็จ Chime Sound\nแสดงบัตรผู้ถือครองบนหน้าจอ]
+    SuccessOut --> EndSuccessOut([นำ PDA ไปใช้งาน])
+
+    %% Check-In Branch
+    Mode -->|2. คืนเข้าตู้ (Check-In)| ScanDevIn[1. ยิงบาร์โค้ดเครื่อง PDA เสียบเข้าตู้]
+    ScanDevIn --> CheckDeptIn{เครื่องสังกัดตู้แผนกนี้หรือไม่?}
+
+    CheckDeptIn -->|ไม่ใช่ / ผิดตู้| RejectIn[❌ ปฏิเสธรายการ REJECT\nส่งเสียงไซเรนเตือน\nแจ้งเตือนตู้สังกัดที่ถูกต้อง]
+    RejectIn --> EndInFail([ยกเลิกรายการ])
+
+    CheckDeptIn -->|สังกัดตู้ถูกต้อง| SaveIn[💾 บันทึกสถานะ: IN_CABINET 🟢\nเคลียร์ผู้ถือครอง + เวลาที่คืน Timestamp In\nบันทึก Transaction Log]
+    SaveIn --> CloudSyncIn[☁️ ซิงค์ข้อมูล Real-Time ไปยัง Turso Cloud]
+    CloudSyncIn --> SuccessIn[🔔 ส่งเสียงแจ้งเตือนสำเร็จ Chime Sound\nไฟสถานะเปลี่ยนเป็นสีเขียวพร้อมใช้งาน]
+    SuccessIn --> EndSuccessIn([เก็บ PDA เข้าตู้เรียบร้อย])
+```
+
+---
+
+### 2. ผังระบบตรวจจับและติดตามอุปกรณ์ค้างเกิน 3 วัน (Overdue Alert Flow)
+```mermaid
+flowchart LR
+    DevCheck[(ฐานข้อมูล Devices)] --> QueryOverdue["Query: status = 'CHECKED_OUT'\nและ (now - last_action_at) >= 3 วัน (72 ชม.)"]
+    QueryOverdue --> HasOverdue{พบเครื่องค้างหรือไม่?}
+    
+    HasOverdue -->|ไม่พบ| NormalState[🟢 สถานะปกติ: ทุกเครื่องคืนตรงเวลา]
+    
+    HasOverdue -->|พบเครื่องค้าง >= 3 วัน| OverdueTrigger[🚨 Alert Trigger Active]
+    OverdueTrigger --> TopBanner[1. แสดงกล่องแจ้งเตือนสีแดงเด่นบน Dashboard\nระบุรหัส SN, ผู้ถือครอง, วันที่เบิก, และจำนวนวันที่ค้าง]
+    OverdueTrigger --> DeptCardBadge[2. แสดง Badge เตือน 🚨 ค้าง >3 วัน\nบนการ์ดสรุปของแผนกนั้นๆ]
+    OverdueTrigger --> FastAction[3. หัวหน้างานติดตาม หรือกด 'คืนตู้ทันที'\nเพื่อปิดสถานะฉุกเฉินได้จากหน้า Dashboard]
+```
+
+---
+
+### 3. ผังสถาปัตยกรรมระบบและการซิงค์คลาวด์ (System Architecture Flow)
+```mermaid
+flowchart TD
+    subgraph Clients ["🖥️ Client Layer (Frontend)"]
+        AdminUI["หน้าแอดมินกลาง (Admin Dashboard)\n- ภาพรวม Real-time\n- ตัวกรองแผนก & ค้นหา\n- นำเข้า Excel / พิมพ์ QR Code"]
+        KioskUI["หน้าจอประจำตู้แผนก (Department Kiosk)\n- โหมดเบิก / คืน (Scan-Only)\n- ระบบเสียง Synthesizer & Siren\n- รองรับเครื่องยิง USB & กล้องมือถือ"]
+    end
+
+    subgraph Backend ["⚙️ Server Layer (Node.js & Express)"]
+        Router["Express REST API\n/api/stats, /api/devices, /api/action, /api/departments"]
+        IsolationGuard["Department Isolation Guard\nตรวจความถูกต้องของสังกัดตู้"]
+        OverdueEngine["Overdue Calculation Engine\nคำนวณระยะเวลาเบิกค้าง"]
+    end
+
+    subgraph DataLayer ["💾 Data Persistence Layer"]
+        LocalSQLite[("SQLite Local Engine (node:sqlite)\ndata/pda_storage.db\nตอบสนองรวดเร็วระดับ Microsecond")]
+        TursoCloud[("☁️ Turso Cloud Database (libsql)\nAWS ap-southeast-1\nซิงค์ข้อมูลสองทางแบบ Real-time")]
+    end
+
+    Clients <-->|HTTP / JSON REST API| Backend
+    Router --> IsolationGuard
+    Router --> OverdueEngine
+    Backend <-->|High-speed Read/Write| LocalSQLite
+    Backend <-->|Auto Sync on Boot & Write| TursoCloud
+```
+
+---
+
 ## 🌟 ฟังก์ชันหลักตาม Requirement
 
 1. **Dual Serial Number & Custom QR Tag (ระบบ 2 รหัส)**

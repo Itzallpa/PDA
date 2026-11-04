@@ -2457,3 +2457,103 @@ table.data-table tr:hover td {
   box-shadow: 0 0 0 4px rgba(96, 165, 250, 0.25), 0 10px 25px rgba(37, 99, 235, 0.12) !important;
   transition: all 0.3s ease;
 }
+
+/* System Workflow & Flow Diagram Styles */
+.flow-diagram-wrapper {
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+}
+
+.flow-section-card {
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  padding: 1rem 1.15rem;
+  transition: all 0.2s ease;
+}
+
+.flow-section-card:hover {
+  border-color: #cbd5e1;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.04);
+}
+
+.flow-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: #0f172a;
+  margin-bottom: 0.85rem;
+  padding-bottom: 0.45rem;
+  border-bottom: 1.5px solid #e2e8f0;
+}
+
+.flow-steps-row {
+  display: flex;
+  align-items: stretch;
+  gap: 0.45rem;
+  flex-wrap: wrap;
+}
+
+.flow-step-card {
+  flex: 1;
+  min-width: 155px;
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  padding: 0.8rem;
+  position: relative;
+  display: flex;
+  flex-direction: column;
+}
+
+.flow-step-num {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 9999px;
+  background: #2563eb;
+  color: #ffffff;
+  font-size: 0.72rem;
+  font-weight: 700;
+  margin-bottom: 0.35rem;
+}
+
+.flow-step-card.success .flow-step-num {
+  background: #16a34a;
+}
+
+.flow-step-card.danger .flow-step-num {
+  background: #dc2626;
+}
+
+.flow-step-card.warn .flow-step-num {
+  background: #d97706;
+}
+
+.flow-step-title {
+  font-size: 0.84rem;
+  font-weight: 700;
+  color: #1e293b;
+  margin-bottom: 0.25rem;
+}
+
+.flow-step-desc {
+  font-size: 0.75rem;
+  color: #64748b;
+  line-height: 1.4;
+}
+
+.flow-arrow-divider {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #94a3b8;
+  font-size: 1rem;
+  font-weight: 700;
+  padding: 0 0.15rem;
+}
